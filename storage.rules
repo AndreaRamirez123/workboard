@@ -1,59 +1,8 @@
 rules_version = '2';
 service firebase.storage {
-  match /b/{bucket}/o {
-
-    function isAdmin() {
-      return request.auth != null && request.auth.token.email in [
-        "andrea_ramirezt@cun.edu.co",
-        "angela_bernalm@cun.edu.co",
-        "jose_forero@cun.edu.co"
-      ];
+  match /b/desarrollo-investigaciones.firebasestorage.app/o {
+    match /{allPaths=**} {
+      allow read, write: if request.auth != null;
     }
-
-    function isOwnerOf(colleagueId) {
-      return request.auth != null &&
-        firestore.get(/databases/(default)/documents/companeros/$(colleagueId)).data.uid == request.auth.uid;
-    }
-
-    function isGroupMember(groupId) {
-      return request.auth != null &&
-        request.auth.uid in firestore.get(/databases/(default)/documents/equipos/$(groupId)).data.get('memberUids', []);
-    }
-
-    // Documentos de compañeros: autenticados suben, dueño o admin elimina
-    match /documentos/{colleagueId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
-      allow delete: if isAdmin() || isOwnerOf(colleagueId);
-    }
-
-    // Documentos de grupos: miembros autenticados suben, miembro o admin elimina
-    match /documentos-grupo/{groupId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
-      allow delete: if isAdmin() || isGroupMember(groupId);
-    }
-
-    // Avatares de perfil
-    match /avatares/{colleagueId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
-      allow delete: if isAdmin() || isOwnerOf(colleagueId);
-    }
-
-    // Archivos adjuntos a tareas individuales
-    match /tareas/{colleagueId}/{taskId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
-      allow delete: if isAdmin() || isOwnerOf(colleagueId);
-    }
-
-    // Archivos adjuntos a tareas de grupo
-    match /tareas-grupo/{groupId}/{taskId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow create, update: if request.auth != null;
-      allow delete: if isAdmin() || isGroupMember(groupId);
-    }
-
   }
 }

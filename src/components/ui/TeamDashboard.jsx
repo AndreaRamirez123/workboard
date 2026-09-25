@@ -58,7 +58,7 @@ export function TeamDashboard({ colleagues, logs }) {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { value: colleagues.length, label: "Personas", sub: "en el equipo", hue: "230" },
-          { value: activeProjects.length, label: "Proyectos activos", sub: "en curso / revisión", hue: "165" },
+          { value: activeProjects.length, label: "Actividades activas", sub: "en curso / revisión", hue: "165" },
           { value: `${avgAvance}%`, label: "Avance promedio", sub: "del equipo", hue: "80" },
           { value: logsThisWeek.length, label: "Notas esta semana", sub: "actividad reciente", hue: "295" },
         ].map((s, i) => (
@@ -73,7 +73,7 @@ export function TeamDashboard({ colleagues, logs }) {
       {/* ── Distribución por estado ─────────────────────────────────────── */}
       {allProjects.length > 0 && (
         <div className="bg-card border border-border rounded-2xl p-5">
-          <p className={labelCls + " mb-4"}>Distribución de proyectos</p>
+          <p className={labelCls + " mb-4"}>Distribución de actividades</p>
           <div className="flex gap-2 flex-wrap">
             {Object.entries(stateCounts).map(([estado, count]) => {
               const hue = STATE_COLOR[estado] || "260"
@@ -103,15 +103,15 @@ export function TeamDashboard({ colleagues, logs }) {
       {/* ── Layout 2 columnas ───────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
 
-        {/* Proyectos activos (3/5) */}
+        {/* Actividades activas (3/5) */}
         <div className="lg:col-span-3 space-y-3">
           <div className="flex items-center justify-between">
-            <p className={labelCls}>Proyectos activos ({activeProjects.length})</p>
+            <p className={labelCls}>Actividades activas ({activeProjects.length})</p>
           </div>
 
           {sortedActive.length === 0 ? (
             <div className="bg-card border border-border rounded-2xl py-12 text-center text-muted-foreground text-[13px]">
-              Sin proyectos activos registrados.
+              Sin actividades activas registradas.
             </div>
           ) : (
             <div className="space-y-2.5">
@@ -167,7 +167,7 @@ export function TeamDashboard({ colleagues, logs }) {
               })}
               {sortedActive.length > 12 && (
                 <p className="text-[12px] text-muted-foreground text-center py-2">
-                  +{sortedActive.length - 12} proyectos más — ver perfiles individuales
+                  +{sortedActive.length - 12} actividades más — ver perfiles individuales
                 </p>
               )}
             </div>

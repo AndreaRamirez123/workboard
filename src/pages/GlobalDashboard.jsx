@@ -137,7 +137,7 @@ export default function GlobalDashboard() {
     ...(isSuperAdmin ? [
       { key: "resumen",   label: "Resumen",   icon: Home },
       { key: "analisis",  label: "Análisis",  icon: TrendingUp },
-      { key: "proyectos", label: "Proyectos", icon: Briefcase },
+      { key: "proyectos", label: "Actividades", icon: Briefcase },
     ] : []),
     { key: "usuarios", label: "Usuarios", icon: Settings },
   ]
@@ -146,6 +146,12 @@ export default function GlobalDashboard() {
   const [projSearch, setProjSearch] = useState("")
   const [projEstado, setProjEstado] = useState("Todos")
   const [expandedSems, setExpandedSems] = useState(() => new Set())
+  const [showScrollTop, setShowScrollTop] = useState(false)
+  useEffect(() => {
+    const handler = () => setShowScrollTop(window.scrollY > 250)
+    window.addEventListener("scroll", handler, { passive: true })
+    return () => window.removeEventListener("scroll", handler)
+  }, [])
   const toggleSem = id => setExpandedSems(prev => {
     const next = new Set(prev)
     next.has(id) ? next.delete(id) : next.add(id)
@@ -324,11 +330,11 @@ export default function GlobalDashboard() {
               <span className="text-[12px] text-muted-foreground">Workboard</span>
               <span className="text-[12px] text-muted-foreground">/</span>
               <span className="text-[13px] font-semibold text-foreground">
-                {tab === "resumen" ? "Resumen global" : tab === "analisis" ? "Análisis global" : tab === "proyectos" ? "Todos los proyectos" : "Gestionar usuarios"}
+                {tab === "resumen" ? "Resumen global" : tab === "analisis" ? "Análisis global" : tab === "proyectos" ? "Todas las actividades" : "Gestionar usuarios"}
               </span>
             </div>
             <span className="lg:hidden text-[14px] font-semibold text-foreground">
-              {tab === "resumen" ? "Resumen global" : tab === "analisis" ? "Análisis global" : tab === "proyectos" ? "Todos los proyectos" : "Gestionar usuarios"}
+              {tab === "resumen" ? "Resumen global" : tab === "analisis" ? "Análisis global" : tab === "proyectos" ? "Todas las actividades" : "Gestionar usuarios"}
             </span>
             <div className="ml-auto flex items-center gap-2">
               <NotificationBell
@@ -358,7 +364,7 @@ export default function GlobalDashboard() {
                   <StatCard label="Equipos activos" value={semilleros.length} hue="165" />
                   <StatCard label="Total de personas" value={totalPersonas}
                     sub={`${sinEquipo} sin equipo asignado`} hue="230" />
-                  <StatCard label="Proyectos en total" value={totalProyectos}
+                  <StatCard label="Actividades en total" value={totalProyectos}
                     sub={`~${semilleros.length ? (totalProyectos / semilleros.length).toFixed(1) : 0} por equipo`} hue="295" />
                   <StatCard label="Herramientas distintas" value={totalHerramientas} hue="40" />
                 </div>
@@ -398,7 +404,7 @@ export default function GlobalDashboard() {
                             <div className="grid grid-cols-3 gap-2 mb-3">
                               {[
                                 { label: "Personas", value: s.memberCount },
-                                { label: "Proyectos", value: s.proyectos },
+                                { label: "Actividades", value: s.proyectos },
                                 { label: "Herramientas", value: s.herramientas },
                               ].map(st => (
                                 <div key={st.label} className="text-center py-2 rounded-xl"
@@ -410,7 +416,7 @@ export default function GlobalDashboard() {
                             </div>
                             <div>
                               <div className="flex justify-between mb-1">
-                                <p className="text-[11px] text-muted-foreground">Con proyectos activos</p>
+                                <p className="text-[11px] text-muted-foreground">Con actividades activas</p>
                                 <p className="text-[11px] font-semibold text-foreground">{pct}%</p>
                               </div>
                               <div className="h-1.5 rounded-full bg-muted overflow-hidden">
@@ -603,7 +609,7 @@ export default function GlobalDashboard() {
                 {/* Resumen numérico */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
-                    { label: "Total proyectos", value: colleagues.flatMap(c => c.proyectos || []).length },
+                    { label: "Total actividades", value: colleagues.flatMap(c => c.proyectos || []).length },
                     { label: "En ejecución",    value: colleagues.flatMap(c => c.proyectos || []).filter(p => p.estado === "En ejecución").length },
                     { label: "Finalizados",     value: colleagues.flatMap(c => c.proyectos || []).filter(p => p.estado === "Finalizado").length },
                     { label: "Equipos activos", value: proyPorEquipo.length },
@@ -618,7 +624,7 @@ export default function GlobalDashboard() {
                 {/* Filtros */}
                 <div className="flex flex-wrap gap-2 items-center">
                   <input
-                    placeholder="Buscar proyecto o persona…"
+                    placeholder="Buscar actividad o persona…"
                     value={projSearch}
                     onChange={e => setProjSearch(e.target.value)}
                     className="h-9 px-3 rounded-xl border border-border bg-card text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 min-w-[220px]"
@@ -635,6 +641,17 @@ export default function GlobalDashboard() {
                     ))}
                   </div>
                 </div>
+
+                {/* Botón volver arriba */}
+                {showScrollTop && (
+                  <button
+                    onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+                    className="fixed bottom-6 right-6 z-50 w-10 h-10 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-110"
+                    style={{ background: "linear-gradient(135deg, oklch(0.52 0.13 165), oklch(0.42 0.14 185))", color: "white" }}
+                    title="Volver arriba">
+                    <ChevronDown size={18} style={{ transform: "rotate(180deg)" }} />
+                  </button>
+                )}
 
                 {/* Equipos en acordeón */}
                 {proyFiltrados.length === 0 ? (
@@ -659,7 +676,7 @@ export default function GlobalDashboard() {
                                 background: `color-mix(in oklch, oklch(0.52 0.13 ${hue}), var(--card) 82%)`,
                                 color: `color-mix(in oklch, oklch(0.52 0.13 ${hue}), var(--foreground) 32%)`,
                               }}>
-                              {proyectos.length} {proyectos.length === 1 ? "proyecto" : "proyectos"}
+                              {proyectos.length} {proyectos.length === 1 ? "actividad" : "actividades"}
                             </span>
                             <ChevronDown size={16} className="text-muted-foreground flex-shrink-0 transition-transform duration-200"
                               style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)" }} />

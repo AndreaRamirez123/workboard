@@ -20,9 +20,9 @@ import { parseContactsFile } from "@/utils/parseContactsFile"
 import { extractPdfText, parseCunPdf } from "@/utils/parsePropuesta"
 import { notificarTareaCompletada, crearNotificacionUsuario } from "@/services/notificaciones.service"
 import { getColleagues, addProject } from "@/services/colleagues.service"
-import { uploadGroupDocument, getGroupDocuments, deleteGroupDocument, uploadGrupoTaskFile, deleteTaskFile, MAX_FILE_SIZE } from "@/services/storage.service"
+import { uploadGroupDocument, getGroupDocuments, deleteGroupDocument, uploadGrupoTaskFile, deleteTaskFile, uploadAttachment, MAX_FILE_SIZE } from "@/services/storage.service"
 import { Pencil, Trash2, Check, X, Plus } from "lucide-react"
-import { doc, updateDoc } from "firebase/firestore"
+import { doc, updateDoc, arrayUnion } from "firebase/firestore"
 import { db } from "@/services/firebase"
 import { downloadFile } from "@/utils/download"
 
@@ -80,6 +80,12 @@ export default function GroupDetail() {
   const [editingLogText, setEditingLogText] = useState("")
   const [showEmoji, setShowEmoji] = useState(false)
   const notaRef = useRef(null)
+  const logAttachRef = useRef(null)
+  const [logAttachFiles, setLogAttachFiles] = useState([])
+  const [logAttachUploading, setLogAttachUploading] = useState(false)
+  const newTaskAttachRef = useRef(null)
+  const [newTaskAttachFiles, setNewTaskAttachFiles] = useState([])
+  const [newTaskAttachUploading, setNewTaskAttachUploading] = useState(false)
 
   // Proyectos
   const [showProjectForm, setShowProjectForm] = useState(false)
@@ -271,13 +277,25 @@ export default function GroupDetail() {
     } catch (err) { console.error(err) }
   }
 
+  // ── Adjuntos genéricos (bitácora y nueva tarea) ───────────────────────────
+  const handleGrupoAttach = async (file, basePath, onAdd, setUploading) => {
+    if (file.size > MAX_FILE_SIZE) { alert("El archivo supera los 15 MB."); return }
+    setUploading(true)
+    try {
+      const meta = await uploadAttachment(basePath, file)
+      onAdd(meta)
+    } catch { alert("No se pudo subir el archivo.") }
+    finally { setUploading(false) }
+  }
+
   // ── Bitácora ─────────────────────────────────────────────────────────────
   const handleAddLog = async () => {
     if (!nota.trim()) return
     setSavingLog(true)
     try {
-      await addGrupoLog(id, nota.trim(), user)
+      await addGrupoLog(id, nota.trim(), user, logAttachFiles)
       setNota("")
+      setLogAttachFiles([])
       setLogs(await getGrupoLogs(id))
     } finally { setSavingLog(false) }
   }
@@ -310,7 +328,7 @@ export default function GroupDetail() {
         await addGrupoProject(id, data)
         notificarMiembros({
           tipo: "proyecto_grupo",
-          titulo: `Nuevo proyecto en "${grupo?.nombre}"`,
+          titulo: `Nueva actividad en "${grupo?.nombre}"`,
           subtitulo: data.nombre,
           path: `/semillero/${semilleroId}/grupo/${id}`,
         })
@@ -425,11 +443,14 @@ export default function GroupDetail() {
     if (!taskForm.titulo.trim()) return
     setSavingTask(true)
     try {
-      await addGrupoTask(id, taskForm)
+      const taskRef = await addGrupoTask(id, taskForm)
+      if (newTaskAttachFiles.length > 0 && taskRef?.id) {
+        await updateDoc(doc(db, "equipos", id, "tareas", taskRef.id), { archivos: arrayUnion(...newTaskAttachFiles) }).catch(() => {})
+      }
+      setNewTaskAttachFiles([])
       if (Number(taskForm.avance) >= 100) {
         notificarTareaCompletada({ taskTitle: taskForm.titulo.trim(), grupoNombre: grupo?.nombre, path: `/semillero/${semilleroId}/grupo/${id}`, semilleroId }).catch(() => {})
       }
-      // Notificar a los miembros del grupo
       notificarMiembros({
         tipo: "tarea_grupo",
         titulo: `Nueva tarea en "${grupo?.nombre}"`,
@@ -770,11 +791,12 @@ export default function GroupDetail() {
             )}
 
             {!showMemberManager && (
-              miembros.length === 0 ? (
-                <p className="text-[12px] text-muted-foreground italic px-1">Sin miembros. Usa "Gestionar" para agregar.</p>
-              ) : (
-                <div className="space-y-1.5">
-                  {miembros.map(c => {
+              <div className="space-y-1.5">
+                {/* Miembros del equipo */}
+                {miembros.length === 0 ? (
+                  <p className="text-[12px] text-muted-foreground italic px-1">Sin miembros. Usa "Gestionar" para agregar.</p>
+                ) : (
+                  miembros.map(c => {
                     const ch = c.colorHue ?? hashHue(c.id)
                     const ch2 = c.colorHue2 ?? null
                     return (
@@ -795,9 +817,9 @@ export default function GroupDetail() {
                         </div>
                       </a>
                     )
-                  })}
-                </div>
-              )
+                  })
+                )}
+              </div>
             )}
           </div>
         </div>
@@ -817,7 +839,7 @@ export default function GroupDetail() {
           <div className="flex border-t border-border/40 px-1 overflow-x-auto">
             {[
               ...(isAdmin ? [{ key: "resumen", label: "Resumen", count: 0 }] : []),
-              { key: "proyectos", label: "Proyectos", count: grupo.proyectos?.length || 0 },
+              { key: "proyectos", label: "Actividades", count: grupo.proyectos?.length || 0 },
               { key: "bitacora", label: "Bitácora", count: logs.length },
               { key: "tareas", label: "Tareas", count: tareasPendientes.length },
               { key: "feedback", label: "Retroalimentación", count: feedback.length },
@@ -858,7 +880,7 @@ export default function GroupDetail() {
             const recentLogs = [...logs].slice(0, 5)
             const statCards = [
               { label: "Miembros", value: miembros.length, color: hue, sub: "en el grupo" },
-              { label: "Proyectos", value: proyAll.length, color: "145", sub: `${proyAll.filter(p => p.estado === "Finalizado" || p.estado === "Entregado").length} finalizados` },
+              { label: "Actividades", value: proyAll.length, color: "145", sub: `${proyAll.filter(p => p.estado === "Finalizado" || p.estado === "Entregado").length} finalizados` },
               { label: "Tareas pendientes", value: tareasPendientes.length, color: tareasVencidas.length > 0 ? "27" : "55", sub: tareasVencidas.length > 0 ? `${tareasVencidas.length} vencida${tareasVencidas.length !== 1 ? "s" : ""}` : "al día" },
               { label: "Completadas", value: tareasHechas.length, color: "165", sub: `de ${tasks.length} tareas` },
             ]
@@ -878,7 +900,7 @@ export default function GroupDetail() {
 
                 {proyAll.length > 0 && (
                   <div className="bg-card border border-border rounded-2xl p-5 space-y-4">
-                    <p className="text-[13px] font-bold text-foreground">Proyectos</p>
+                    <p className="text-[13px] font-bold text-foreground">Actividades</p>
                     <div>
                       <div className="flex justify-between text-[11px] text-muted-foreground mb-1.5">
                         <span>Avance promedio</span>
@@ -965,7 +987,7 @@ export default function GroupDetail() {
                 {proyAll.length === 0 && tasks.length === 0 && logs.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
                     <p className="text-[14px] font-medium text-muted-foreground">Sin actividad registrada aún.</p>
-                    <p className="text-[12px] text-muted-foreground mt-1">Agrega proyectos, tareas o notas para ver el resumen.</p>
+                    <p className="text-[12px] text-muted-foreground mt-1">Agrega actividades, tareas o notas para ver el resumen.</p>
                   </div>
                 )}
               </div>
@@ -975,7 +997,7 @@ export default function GroupDetail() {
           {activeTab === "proyectos" && (<>
             <div className="flex justify-between items-center">
               <h2 className="text-[18px] font-bold text-foreground tracking-tight">
-                Proyectos <span className="text-[14px] font-normal text-muted-foreground ml-1">({grupo.proyectos?.length || 0})</span>
+                Actividades <span className="text-[14px] font-normal text-muted-foreground ml-1">({grupo.proyectos?.length || 0})</span>
               </h2>
               {(isAdmin || isMember) && (
                 <button onClick={() => { setEditingProject(null); setProjectForm(EMPTY_PROJECT); setPdfImported(false); setPdfError(null); setShowProjectForm(v => !v) }}
@@ -987,7 +1009,7 @@ export default function GroupDetail() {
             </div>
             {showProjectForm && (isAdmin || isMember) && (
               <div className="bg-muted/40 border border-border rounded-xl p-4 space-y-3">
-                <p className="text-[13px] font-semibold text-foreground">{editingProject ? "Editar proyecto" : "Nuevo proyecto"}</p>
+                <p className="text-[13px] font-semibold text-foreground">{editingProject ? "Editar actividad" : "Nueva actividad"}</p>
                 <input ref={pdfInputRef} type="file" accept="application/pdf" className="hidden" onChange={handlePdfImport} />
                 {!editingProject && (
                   <div className="rounded-xl border border-border bg-card p-4 space-y-3">
@@ -1035,7 +1057,7 @@ export default function GroupDetail() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <p className={labelCls}>Nombre *</p>
-                    <input placeholder="Nombre del proyecto" value={projectForm.nombre}
+                    <input placeholder="Nombre de la actividad" value={projectForm.nombre}
                       onChange={e => setProjectForm(f => ({ ...f, nombre: e.target.value }))} className={inputCls} />
                   </div>
                   <div>
@@ -1066,7 +1088,7 @@ export default function GroupDetail() {
                   </div>
                   <div className="sm:col-span-2">
                     <p className={labelCls}>Qué hace</p>
-                    <textarea placeholder="Descripción del proyecto…" value={projectForm.queHace}
+                    <textarea placeholder="Descripción de la actividad…" value={projectForm.queHace}
                       onChange={e => setProjectForm(f => ({ ...f, queHace: e.target.value }))}
                       rows={2} className={inputCls + " resize-none"} />
                   </div>
@@ -1089,7 +1111,7 @@ export default function GroupDetail() {
                   return (
                     <div className="border-t border-border pt-3 mt-1">
                       <div className="flex items-center justify-between mb-2">
-                        <p className={labelCls + " mb-0"}>Archivos del proyecto</p>
+                        <p className={labelCls + " mb-0"}>Archivos de la actividad</p>
                         <button type="button"
                           onClick={() => { uploadingProjectRef.current = editProjName; setUploadingForProject(editProjName); fileInputRef.current?.click() }}
                           disabled={uploadProgress !== null}
@@ -1135,19 +1157,19 @@ export default function GroupDetail() {
                 })()}
                 <div className="flex gap-2">
                   <Button size="sm" onClick={handleSaveProject} disabled={savingProject}>
-                    {savingProject ? "Guardando…" : editingProject ? "Actualizar" : "Crear proyecto"}
+                    {savingProject ? "Guardando…" : editingProject ? "Actualizar" : "Crear actividad"}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => { setShowProjectForm(false); setEditingProject(null) }}>Cancelar</Button>
                 </div>
               </div>
             )}
             {(grupo.proyectos?.length || 0) > 3 && (
-              <input placeholder="Buscar proyecto…" value={projectSearch}
+              <input placeholder="Buscar actividad…" value={projectSearch}
                 onChange={e => setProjectSearch(e.target.value)} className={inputCls} />
             )}
             {proyectos.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-10 gap-3 border border-border/60 rounded-xl">
-                <p className="text-[13px] font-medium text-muted-foreground">{grupo.proyectos?.length > 0 ? "Sin coincidencias." : "Sin proyectos aún."}</p>
+                <p className="text-[13px] font-medium text-muted-foreground">{grupo.proyectos?.length > 0 ? "Sin coincidencias." : "Sin actividades aún."}</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1302,9 +1324,27 @@ export default function GroupDetail() {
                     <EmojiPicker onEmojiClick={e => { setNota(n => n + e.emoji); setShowEmoji(false); notaRef.current?.focus() }} height={350} width={300} />
                   </div>
                 )}
-                <Button size="sm" className="mt-2" onClick={handleAddLog} disabled={savingLog || !nota.trim()}>
-                  {savingLog ? "Guardando…" : "Agregar nota"}
-                </Button>
+                <input ref={logAttachRef} type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.docx,.doc,.txt,.csv" className="hidden"
+                  onChange={e => { Array.from(e.target.files||[]).forEach(f => handleGrupoAttach(f, `logs-grupo/${id}`, meta => setLogAttachFiles(p => [...p, meta]), setLogAttachUploading)); e.target.value="" }} />
+                {logAttachFiles.length > 0 && (
+                  <div className="flex flex-col gap-1 mt-2">
+                    {logAttachFiles.map((f, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[12px] px-2 py-1 rounded-lg border border-border bg-muted/40">
+                        <span className="flex-1 truncate">{f.nombre}</span>
+                        <button type="button" onClick={() => setLogAttachFiles(p => p.filter((_,j)=>j!==i))} className="text-destructive hover:opacity-70">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2 mt-2">
+                  <button type="button" onClick={() => logAttachRef.current?.click()} disabled={logAttachUploading}
+                    className="text-[12px] font-medium px-3 py-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
+                    📎 {logAttachUploading ? "Subiendo…" : "Adjuntar archivo"}
+                  </button>
+                  <Button size="sm" onClick={handleAddLog} disabled={savingLog || !nota.trim() || logAttachUploading}>
+                    {savingLog ? "Guardando…" : "Agregar nota"}
+                  </Button>
+                </div>
               </div>
             )}
             {logs.length === 0 ? (
@@ -1406,8 +1446,24 @@ export default function GroupDetail() {
                       onChange={e => setTaskForm(f => ({ ...f, avance: Number(e.target.value) }))} className="w-full accent-primary" />
                   </div>
                 </div>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={handleAddTask} disabled={savingTask}>
+                <input ref={newTaskAttachRef} type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.docx,.doc,.txt,.csv" className="hidden"
+                  onChange={e => { Array.from(e.target.files||[]).forEach(f => handleGrupoAttach(f, `tareas-grupo/${id}/nueva`, meta => setNewTaskAttachFiles(p => [...p, meta]), setNewTaskAttachUploading)); e.target.value="" }} />
+                {newTaskAttachFiles.length > 0 && (
+                  <div className="flex flex-col gap-1">
+                    {newTaskAttachFiles.map((f, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[12px] px-2 py-1 rounded-lg border border-border bg-muted/40">
+                        <span className="flex-1 truncate">{f.nombre}</span>
+                        <button type="button" onClick={() => setNewTaskAttachFiles(p => p.filter((_,j)=>j!==i))} className="text-destructive hover:opacity-70">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => newTaskAttachRef.current?.click()} disabled={newTaskAttachUploading}
+                    className="text-[12px] font-medium px-3 py-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
+                    📎 {newTaskAttachUploading ? "Subiendo…" : "Adjuntar archivo"}
+                  </button>
+                  <Button size="sm" onClick={handleAddTask} disabled={savingTask || newTaskAttachUploading}>
                     {savingTask ? "Guardando…" : "Crear tarea"}
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => setShowTaskForm(false)}>Cancelar</Button>

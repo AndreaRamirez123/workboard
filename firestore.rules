@@ -6,11 +6,10 @@ service cloud.firestore {
       return request.auth != null && request.auth.token.email in [
         "andrea_ramirezt@cun.edu.co",
         "angela_bernalm@cun.edu.co",
-        "jose_forero@cun.edu.co"
+        "jarvey_gonzalez@cun.edu.co"
       ];
     }
 
-    // isRoleAdmin: incluye superadmins (hardcoded) y coordinadores (role=admin en Firestore)
     function isRoleAdmin() {
       return isAdmin() || (
         request.auth != null &&
@@ -29,38 +28,56 @@ service cloud.firestore {
       return isRoleAdmin() || isGrupoMember(equipoId);
     }
 
-    function isColleagueOwner(docId) {
-      return request.auth != null && (
-        request.auth.uid == get(/databases/$(database)/documents/companeros/$(docId)).data.uid ||
-        request.auth.token.email == get(/databases/$(database)/documents/companeros/$(docId)).data.email
-      );
-    }
-
     // ── Compañeros ──────────────────────────────────────────────
     match /companeros/{docId} {
       allow read: if request.auth != null;
       allow create, delete: if isAdmin();
-      allow update: if isAdmin() || isColleagueOwner(docId);
+      // Actualizar: admin o el propio usuario (por uid o email)
+      allow update: if isAdmin() || (
+        request.auth != null && (
+          request.auth.uid == resource.data.get("uid", "") ||
+          request.auth.token.email == resource.data.get("email", "")
+        )
+      );
 
       // Retroalimentación: coordinadores y superadmins escriben; dueño y coordinadores leen
       match /retroalimentacion/{fbId} {
-        allow read: if request.auth != null && (isRoleAdmin() || isColleagueOwner(docId));
+        allow read: if request.auth != null && (
+          isRoleAdmin() ||
+          request.auth.uid == get(/databases/$(database)/documents/companeros/$(docId)).data.get("uid", "") ||
+          request.auth.token.email == get(/databases/$(database)/documents/companeros/$(docId)).data.get("email", "")
+        );
         allow create: if isRoleAdmin();
         allow update, delete: if isRoleAdmin();
       }
 
       // Tareas: coordinadores y superadmins crean/eliminan; dueño y coordinadores actualizan y leen
       match /tareas/{taskId} {
-        allow read: if request.auth != null && (isRoleAdmin() || isColleagueOwner(docId));
+        allow read: if request.auth != null && (
+          isRoleAdmin() ||
+          request.auth.uid == get(/databases/$(database)/documents/companeros/$(docId)).data.get("uid", "") ||
+          request.auth.token.email == get(/databases/$(database)/documents/companeros/$(docId)).data.get("email", "")
+        );
         allow create, delete: if isRoleAdmin();
-        allow update: if isRoleAdmin() || isColleagueOwner(docId);
+        allow update: if isRoleAdmin() || (
+          request.auth != null && (
+            request.auth.uid == get(/databases/$(database)/documents/companeros/$(docId)).data.get("uid", "") ||
+            request.auth.token.email == get(/databases/$(database)/documents/companeros/$(docId)).data.get("email", "")
+          )
+        );
       }
 
-      // Documentos: dueño y admin suben, admin elimina, dueño y admin leen
+      // Documentos adjuntos: cualquier usuario autenticado puede subir y leer;
+      // solo admin puede eliminar (para proteger contra borrado malicioso)
       match /documentos/{documentId} {
-        allow read: if request.auth != null && (isAdmin() || isColleagueOwner(docId));
-        allow create: if isAdmin() || isColleagueOwner(docId);
-        allow delete: if isAdmin();
+        allow read: if request.auth != null;
+        allow create: if request.auth != null;
+        allow delete: if isAdmin() || (
+          request.auth != null && (
+            request.auth.uid == get(/databases/$(database)/documents/companeros/$(docId)).data.get("uid", "") ||
+            request.auth.token.email == get(/databases/$(database)/documents/companeros/$(docId)).data.get("email", "")
+          )
+        );
       }
     }
 
@@ -89,7 +106,7 @@ service cloud.firestore {
     // ── Cola de notificaciones WhatsApp ─────────────────────────
     match /wpp_queue/{docId} {
       allow create: if isAdmin();
-      allow read, update: if false; // solo Admin SDK vía Cloud Functions
+      allow read, update: if false;
     }
 
     // ── Roles de usuario ────────────────────────────────────────

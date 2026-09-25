@@ -44,9 +44,10 @@ export const updateGrupoProject = async (grupoId, oldProject, newProject) => {
 }
 
 // ── Bitácora (subcollection) ───────────────────────────────────────────────
-export const addGrupoLog = async (grupoId, nota, user) => {
+export const addGrupoLog = async (grupoId, nota, user, archivos = []) => {
   return await addDoc(collection(db, "equipos", grupoId, "logs"), {
     nota,
+    archivos,
     createdAt: serverTimestamp(),
     creadoPor: user.uid,
     creadoPorNombre: user.displayName || user.email,

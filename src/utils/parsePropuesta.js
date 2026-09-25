@@ -91,21 +91,44 @@ export function parseCunPdf(rawText) {
   const result = {}
 
   // ── Nombre / Título ──────────────────────────────────────────────────────
-  // El PDF tiene "Título de la Propuesta: Dashboard workboard"
   const titlePatterns = [
+    // Formato CUN propuesta
     /T[ÍI]tulo\s+de\s+la\s+Propuesta\s*:\s*([^.:\n]{3,80}?)(?=\s*(?:Este\s+documento|INVESTIGADOR|$))/i,
     /T[ÍI]TULO[^:]{0,50}:\s*([^:]{3,80}?)(?=\s*(?:INVESTIGADOR|PROGRAMA|PER[ÍI]ODO|TIPO|Este|El ob|$))/i,
     /T[ÍI]TULO[:\s]+([^\n.]{3,60})/i,
+    // Formatos de informe / reporte
+    /NOMBRE\s+DEL\s+PROYECTO[^:]*:\s*([^\n:]{5,100})/i,
+    /NOMBRE\s+DE\s+LA\s+ACTIVIDAD[^:]*:\s*([^\n:]{5,100})/i,
+    /NOMBRE\s+DEL\s+INFORME[^:]*:\s*([^\n:]{5,100})/i,
+    /PROYECTO[:\s]+([A-ZÁÉÍÓÚÜÑ][^\n:.]{5,80}?)(?=\s*(?:FECHA|PERÍODO|RESPONSABLE|INFORME|RESUMEN|$))/,
+    /(?:Informe|Reporte)\s+(?:de|del|general)[:\s]+([^\n:.]{5,100}?)(?=\s*(?:Fecha|Período|Resumen|Proyecto|$))/i,
   ]
   for (const p of titlePatterns) {
     const m = text.match(p)
     if (m) {
       const candidate = m[1].trim()
         .replace(/^(de\s+la\s+)?Propuesta\s*/i, "")
-        .replace(/[^\w\sáéíóúüñÁÉÍÓÚÜÑ\-(). ]/g, "")
+        .replace(/[^\w\sáéíóúüñÁÉÍÓÚÜÑ\-(). /]/g, "")
         .trim()
       if (candidate.length >= 3 && !isTemplate(candidate)) {
         result.nombre = candidate
+        break
+      }
+    }
+  }
+
+  // Si aún no hay título, intentar con las primeras líneas del texto original
+  if (!result.nombre) {
+    const firstLines = rawText.split("\n").map(l => l.trim()).filter(l => l.length > 5)
+    for (const line of firstLines.slice(0, 12)) {
+      const clean = line.replace(/[^\w\sáéíóúüñÁÉÍÓÚÜÑ\-(). /]/g, "").trim()
+      if (
+        clean.length >= 8 && clean.length <= 100 &&
+        !isTemplate(clean) &&
+        !/^\d+$/.test(clean) &&
+        !/^(página|pág|corporaci|versi[oó]n|formato|inv-fo)/i.test(clean)
+      ) {
+        result.nombre = clean
         break
       }
     }

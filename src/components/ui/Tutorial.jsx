@@ -10,7 +10,7 @@ const STEPS = [
   {
     icon: "👥",
     title: "Tu equipo en tarjetas",
-    desc: "Cada tarjeta es un integrante: su rol, proyectos activos, nivel de avance y herramientas. Haz clic en una para entrar al perfil completo.",
+    desc: "Cada tarjeta es un integrante: su rol, actividades activas, nivel de avance y herramientas. Haz clic en una para entrar al perfil completo.",
     highlight: "[data-tour='cards']",
     color: "260",
     tip: "Haz clic en cualquier tarjeta para ver el perfil detallado",

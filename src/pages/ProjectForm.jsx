@@ -237,10 +237,10 @@ export default function ProjectForm() {
           </div>
           <div>
             <h1 className="text-[22px] font-bold text-white leading-tight tracking-tight">
-              {isEdit ? "Editar proyecto" : "Nuevo proyecto"}
+              {isEdit ? "Editar actividad" : "Nueva actividad"}
             </h1>
             <p className="text-[13px] text-white/70 mt-0.5">
-              {isEdit ? form.nombre || "Actualiza los datos del proyecto" : "Define el alcance y cronograma"}
+              {isEdit ? form.nombre || "Actualiza los datos de la actividad" : "Define el alcance y cronograma"}
             </p>
           </div>
         </div>
@@ -349,7 +349,7 @@ export default function ProjectForm() {
                   className={inputClass} />
               </div>
               <div className="sm:col-span-2">
-                <label className="block text-[12px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">¿Qué hace en este proyecto?</label>
+                <label className="block text-[12px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">¿Qué hace en esta actividad?</label>
                 <textarea name="queHace" value={form.queHace} onChange={handleChange}
                   placeholder="Ej: Desarrolla el módulo de facturación…" rows={3} className={inputClass} />
               </div>
@@ -396,7 +396,7 @@ export default function ProjectForm() {
           {isEdit && (
             <div className="rounded-2xl border border-border bg-card p-5 space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-[14px] font-semibold text-foreground">Archivos del proyecto</h3>
+                <h3 className="text-[14px] font-semibold text-foreground">Archivos de la actividad</h3>
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
@@ -416,7 +416,7 @@ export default function ProjectForm() {
               {uploadError && <p className="text-[12px] text-destructive">{uploadError}</p>}
 
               {documents.length === 0 ? (
-                <p className="text-[12px] text-muted-foreground italic">Sin archivos aún. Sube documentos, imágenes o presentaciones del proyecto.</p>
+                <p className="text-[12px] text-muted-foreground italic">Sin archivos aún. Sube documentos, imágenes o presentaciones de la actividad.</p>
               ) : (
                 <div className="space-y-2">
                   {documents.map(d => {
@@ -449,7 +449,7 @@ export default function ProjectForm() {
             <button type="submit" disabled={saving}
               className="h-10 px-6 rounded-xl text-[13px] font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
               style={{ background: "linear-gradient(135deg, oklch(0.52 0.13 165), oklch(0.44 0.14 185))", boxShadow: "0 4px 14px oklch(0.52 0.13 165 / 30%)" }}>
-              {saving ? "Guardando…" : isEdit ? "Actualizar proyecto" : "Guardar proyecto"}
+              {saving ? "Guardando…" : isEdit ? "Actualizar actividad" : "Guardar actividad"}
             </button>
             <button type="button" onClick={() => navigate(`/semillero/${semilleroId}/colleague/${id}`)}
               className="h-10 px-5 rounded-xl text-[13px] font-medium border border-border text-muted-foreground hover:text-foreground hover:border-primary/30 transition-all">

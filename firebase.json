@@ -28,6 +28,7 @@
     "source": "functions"
   },
   "storage": {
+    "bucket": "desarrollo-investigaciones.firebasestorage.app",
     "rules": "storage.rules"
   }
 }

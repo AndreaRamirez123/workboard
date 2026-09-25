@@ -11,7 +11,7 @@ import { addFeedback, getFeedback, deleteFeedback, updateFeedback } from "@/serv
 import { addTask, getTasks, updateTask, updateTaskStatus, deleteTask, updateTaskAvance, addTaskFile, removeTaskFile, solicitarPlazoTask, cancelarPlazoTask, aceptarPlazoTask, rechazarPlazoTask, dismissPlazoResultadoTask } from "@/services/tasks.service"
 import { notificarTareaCompletada, crearNotificacionUsuario } from "@/services/notificaciones.service"
 import { queueTareaNotification } from "@/services/wpp.service"
-import { uploadTaskFile, deleteTaskFile, MAX_FILE_SIZE } from "@/services/storage.service"
+import { uploadTaskFile, deleteTaskFile, uploadAttachment, MAX_FILE_SIZE } from "@/services/storage.service"
 import { useAuth } from "@/context/AuthContext"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ui/ThemeToggle"
@@ -109,6 +109,8 @@ export default function ColleagueDetail() {
   const [showEmoji, setShowEmoji] = useState(false)
   const [projectSearch, setProjectSearch] = useState("")
   const [logSearch, setLogSearch] = useState("")
+  const [logSelectMode, setLogSelectMode] = useState(false)
+  const [selectedLogIds, setSelectedLogIds] = useState(new Set())
   const notaRef = useRef(null)
 
   const [feedback, setFeedback] = useState([])
@@ -141,7 +143,7 @@ export default function ColleagueDetail() {
 
   // ── Inline project form state ─────────────────────────────────────────────
   const PROJ_ESTADOS = ["Formulación", "En ejecución", "En evaluación", "Finalizado", "Suspendido"]
-  const emptyProjectForm = { nombre: "", estado: "En ejecución", area: "", herramientas: "", queHace: "", observaciones: "", fechaInicio: "", fechaEntrega: "" }
+  const emptyProjectForm = { nombre: "", estado: "En ejecución", area: "", herramientas: "", queHace: "", observaciones: "", fechaInicio: "", fechaEntrega: "", archivos: [] }
   const [showProjectForm, setShowProjectForm] = useState(false)
   const [editingProject, setEditingProject] = useState(null)
   const [projectForm, setProjectForm] = useState(emptyProjectForm)
@@ -151,6 +153,25 @@ export default function ColleagueDetail() {
   const [pdfError, setPdfError] = useState(null)
   const [pdfImported, setPdfImported] = useState(false)
   const pdfInputRef = useRef(null)
+  const projAttachRef = useRef(null)
+  const taskAttachRef = useRef(null)
+  const logAttachRef  = useRef(null)
+  const [projAttachUploading, setProjAttachUploading] = useState(false)
+  const [taskAttachFiles, setTaskAttachFiles] = useState([])
+  const [taskAttachUploading, setTaskAttachUploading] = useState(false)
+  const [logAttachFiles, setLogAttachFiles] = useState([])
+  const [logAttachUploading, setLogAttachUploading] = useState(false)
+  const [previewFile, setPreviewFile] = useState(null) // { url, nombre }
+
+  const handleAttachFile = async (file, basePath, onAdd, setUploading) => {
+    if (file.size > MAX_FILE_SIZE) { alert(`El archivo supera los 15 MB.`); return }
+    setUploading(true)
+    try {
+      const meta = await uploadAttachment(basePath, file)
+      onAdd(meta)
+    } catch { alert("No se pudo subir el archivo.") }
+    finally { setUploading(false) }
+  }
 
   // Auto-open edit form when arriving from global projects view
   useEffect(() => {
@@ -183,6 +204,14 @@ export default function ColleagueDetail() {
       const rawText = await extractPdfText(file)
       const fields = parseCunPdf(rawText)
       if (Object.keys(fields).length === 0) { setPdfError("No se reconoció el formato del PDF."); return }
+
+      // Subir el PDF como adjunto para que quede visible en la actividad
+      const proyNombre = (fields.nombre || "propuesta").replace(/[^a-zA-Z0-9]/g, "_")
+      let pdfMeta = null
+      try {
+        pdfMeta = await uploadAttachment(`proyectos/${id}/${proyNombre}`, file)
+      } catch { /* si falla el upload no bloqueamos el import */ }
+
       setProjectForm(prev => ({
         ...prev,
         nombre: fields.nombre || prev.nombre,
@@ -191,6 +220,7 @@ export default function ColleagueDetail() {
         herramientas: Array.isArray(fields.herramientas) ? fields.herramientas.join(", ") : (fields.herramientas || prev.herramientas),
         fechaInicio: fields.fechaInicio || prev.fechaInicio,
         fechaEntrega: fields.fechaEntrega || prev.fechaEntrega,
+        archivos: pdfMeta ? [...(prev.archivos || []), pdfMeta] : (prev.archivos || []),
       }))
       setPdfImported(true)
     } catch { setPdfError("No se pudo leer el archivo.") }
@@ -203,20 +233,20 @@ export default function ColleagueDetail() {
     const proyecto = {
       nombre: projectForm.nombre.trim(),
       estado: projectForm.estado,
-      avance: 0,
+      avance: editingProject?.avance ?? 0,
       area: projectForm.area.trim(),
       queHace: projectForm.queHace.trim(),
       herramientas: projectForm.herramientas.split(",").map(h => h.trim()).filter(Boolean),
       observaciones: projectForm.observaciones.trim(),
       fechaInicio: projectForm.fechaInicio,
       fechaEntrega: projectForm.fechaEntrega,
+      archivos: projectForm.archivos || [],
     }
     try {
       if (editingProject) {
         await updateProject(id, editingProject, proyecto)
       } else {
         await updateDoc(doc(db, "companeros", id), { proyectos: arrayUnion(proyecto) })
-        addDoc(collection(db, "logs"), { colleagueId: id, colleagueName: companero?.nombre, nota: `Nuevo proyecto: ${proyecto.nombre}`, creadoPor: user?.uid, semilleroId: semilleroId || null, createdAt: serverTimestamp() }).catch(() => {})
       }
       const snap = await getDoc(doc(db, "companeros", id))
       setCompanero(snap.data())
@@ -262,7 +292,11 @@ export default function ColleagueDetail() {
     if (!taskForm.titulo.trim()) return
     setSavingTask(true)
     try {
-      await addTask(id, taskForm, user)
+      const taskRef = await addTask(id, taskForm, user)
+      if (taskAttachFiles.length > 0 && taskRef?.id) {
+        await updateDoc(doc(db, "companeros", id, "tareas", taskRef.id), { archivos: arrayUnion(...taskAttachFiles) }).catch(() => {})
+      }
+      setTaskAttachFiles([])
       if (Number(taskForm.avance) >= 100) {
         notificarTareaCompletada({ taskTitle: taskForm.titulo.trim(), assigneeName: companero?.nombre || id, path: `/semillero/${semilleroId}/colleague/${id}`, semilleroId }).catch(() => {})
       }
@@ -437,6 +471,23 @@ export default function ColleagueDetail() {
     }
   }
 
+  const handleDeleteProjectFile = async (proyecto, archivo) => {
+    if (!window.confirm(`¿Eliminar "${archivo.nombre}"?`)) return
+    try {
+      if (archivo.storagePath) await deleteTaskFile(archivo.storagePath)
+      const updated = { ...proyecto, archivos: (proyecto.archivos || []).filter(a => a.storagePath !== archivo.storagePath) }
+      await updateProject(id, proyecto, updated)
+      setCompanero(prev => ({
+        ...prev,
+        proyectos: (prev.proyectos || []).map(p =>
+          p.nombre === proyecto.nombre && p.fechaInicio === proyecto.fechaInicio ? updated : p
+        )
+      }))
+    } catch (err) {
+      console.error("[Workboard] Error eliminando archivo de actividad:", err)
+    }
+  }
+
   const handleDeleteTaskFile = async (taskId, archivo) => {
     if (!window.confirm(`¿Eliminar "${archivo.nombre}"?`)) return
     try {
@@ -455,7 +506,7 @@ export default function ColleagueDetail() {
   }
 
   const handleDeleteProject = async (proyecto) => {
-    if (!confirm(`¿Eliminar el proyecto "${proyecto.nombre}"?`)) return
+    if (!confirm(`¿Eliminar la actividad "${proyecto.nombre}"?`)) return
     await deleteProject(id, proyecto)
     loadData()
   }
@@ -479,8 +530,9 @@ export default function ColleagueDetail() {
     e.preventDefault()
     if (!nota.trim()) return
     setSaving(true)
-    await addLog({ colleagueId: id, colleagueName: companero.nombre, nota, userId: user.uid, semilleroId })
+    await addLog({ colleagueId: id, colleagueName: companero.nombre, nota, userId: user.uid, semilleroId, archivos: logAttachFiles })
     setNota("")
+    setLogAttachFiles([])
     setLogs(await getLogs(id))
     setSaving(false)
   }
@@ -743,7 +795,7 @@ export default function ColleagueDetail() {
         <div className="border-b border-border/50 px-5 flex sticky top-14 z-10"
           style={{ backgroundColor: "color-mix(in srgb, var(--background) 95%, transparent)", backdropFilter: "blur(12px)" }}>
           {[
-            { key: "proyectos", label: "Proyectos", count: companero.proyectos?.length || 0 },
+            { key: "proyectos", label: "Actividades", count: companero.proyectos?.length || 0 },
             { key: "bitacora",  label: "Bitácora",  count: logs.length },
             ...(isAdmin || isOwnProfile ? [
               { key: "tareas",   label: "Tareas",   count: tasks.filter(t => t.estado !== "Hecha").length },
@@ -775,7 +827,7 @@ export default function ColleagueDetail() {
         <div>
           <div className="flex justify-between items-center mb-3">
             <h2 className="text-[18px] font-bold text-foreground tracking-tight">
-              Proyectos
+              Actividades
               {companero.proyectos?.length > 0 && (
                 <span className="ml-2 text-[12px] font-normal text-muted-foreground">
                   ({companero.proyectos.length})
@@ -784,7 +836,7 @@ export default function ColleagueDetail() {
             </h2>
             {canEdit && (
               <Button size="sm" className="text-[13px] h-8" onClick={() => { setShowProjectForm(v => !v); setEditingProject(null); setProjectForm(emptyProjectForm); setPdfImported(false) }}>
-                {showProjectForm && !editingProject ? "Cancelar" : "+ Proyecto"}
+                {showProjectForm && !editingProject ? "Cancelar" : "+ Actividad"}
               </Button>
             )}
           </div>
@@ -792,7 +844,7 @@ export default function ColleagueDetail() {
           {/* ── Inline project form ─────────────────────────────────────── */}
           {showProjectForm && canEdit && (
             <div className="rounded-xl border border-border p-4 space-y-3 mb-3" style={{ background: "var(--muted)" }}>
-              <p className="text-[13px] font-semibold text-foreground">{editingProject ? "Editar proyecto" : "Nuevo proyecto"}</p>
+              <p className="text-[13px] font-semibold text-foreground">{editingProject ? "Editar actividad" : "Nueva actividad"}</p>
               <input ref={pdfInputRef} type="file" accept=".pdf" className="hidden" onChange={handlePdfImport} />
               {!editingProject && (
                 <div className="rounded-xl border border-border bg-card p-4 space-y-3">
@@ -834,7 +886,7 @@ export default function ColleagueDetail() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Nombre *</p>
-                  <input placeholder="Nombre del proyecto" value={projectForm.nombre}
+                  <input placeholder="Nombre de la actividad" value={projectForm.nombre}
                     onChange={e => setProjectForm(f => ({ ...f, nombre: e.target.value }))}
                     className="w-full bg-card border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30" />
                 </div>
@@ -871,7 +923,7 @@ export default function ColleagueDetail() {
                 </div>
                 <div className="sm:col-span-2">
                   <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Qué hace</p>
-                  <textarea placeholder="Descripción del proyecto…" value={projectForm.queHace}
+                  <textarea placeholder="Descripción de la actividad…" value={projectForm.queHace}
                     onChange={e => setProjectForm(f => ({ ...f, queHace: e.target.value }))}
                     rows={2} className="w-full bg-card border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 resize-none" />
                 </div>
@@ -882,12 +934,39 @@ export default function ColleagueDetail() {
                     rows={2} className="w-full bg-card border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/30 resize-none" />
                 </div>
               </div>
+              {/* Archivos adjuntos del proyecto */}
+              <div className="space-y-1.5">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide">Archivos adjuntos</p>
+                <input ref={projAttachRef} type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.docx,.doc,.txt,.csv,.pptx,.ppt" className="hidden"
+                  onChange={e => { Array.from(e.target.files || []).forEach(f => handleAttachFile(f, `proyectos/${id}/${projectForm.nombre.replace(/[^a-zA-Z0-9]/g,"_") || "nuevo"}`, meta => setProjectForm(prev => ({ ...prev, archivos: [...(prev.archivos||[]), meta] })), setProjAttachUploading)); e.target.value="" }} />
+                {(projectForm.archivos || []).map((f, i) => (
+                  <div key={i} className="flex items-center gap-2 text-[12px] rounded-lg px-2 py-1.5 border border-border bg-muted/40">
+                    {f.url ? (
+                      <a href={f.url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-1.5 flex-1 min-w-0 hover:opacity-70 transition-opacity"
+                        style={{ color: "oklch(0.42 0.14 165)" }}>
+                        📎 <span className="truncate">{f.nombre}</span>
+                        <span className="text-muted-foreground flex-shrink-0 text-[10px]">Ver →</span>
+                      </a>
+                    ) : (
+                      <span className="flex-1 truncate text-foreground">📎 {f.nombre}</span>
+                    )}
+                    {f.size && <span className="text-muted-foreground flex-shrink-0">{(f.size/1024).toFixed(0)} KB</span>}
+                    <button type="button" onClick={() => setProjectForm(prev => ({ ...prev, archivos: prev.archivos.filter((_,j) => j !== i) }))} className="text-destructive hover:opacity-70 flex-shrink-0">✕</button>
+                  </div>
+                ))}
+                <button type="button" onClick={() => projAttachRef.current?.click()} disabled={projAttachUploading}
+                  className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg border border-dashed border-border hover:border-ring/50 transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50">
+                  📎 {projAttachUploading ? "Subiendo…" : "Adjuntar archivo"}
+                </button>
+              </div>
+
               {projectSaveError && <p className="text-[12px] text-destructive">{projectSaveError}</p>}
               <div className="flex gap-2">
-                <button onClick={handleSaveProject} disabled={savingProject || !projectForm.nombre.trim()}
+                <button onClick={handleSaveProject} disabled={savingProject || !projectForm.nombre.trim() || projAttachUploading}
                   className="h-9 px-5 rounded-xl text-[13px] font-bold text-white disabled:opacity-50 transition-all hover:opacity-90"
                   style={{ background: "linear-gradient(135deg, oklch(0.52 0.13 165), oklch(0.44 0.14 185))" }}>
-                  {savingProject ? "Guardando…" : editingProject ? "Actualizar proyecto" : "Crear proyecto"}
+                  {savingProject ? "Guardando…" : editingProject ? "Actualizar actividad" : "Crear actividad"}
                 </button>
                 <button onClick={() => { setShowProjectForm(false); setEditingProject(null); setProjectForm(emptyProjectForm) }}
                   className="h-9 px-4 rounded-xl text-[13px] font-medium border border-border text-muted-foreground hover:text-foreground transition-colors">
@@ -904,7 +983,7 @@ export default function ColleagueDetail() {
               </svg>
               <input
                 type="text"
-                placeholder="Buscar proyecto…"
+                placeholder="Buscar actividad…"
                 value={projectSearch}
                 onChange={e => setProjectSearch(e.target.value)}
                 className="w-full h-9 bg-card border border-border rounded-xl pl-8 pr-4 text-[13px] text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-primary/30 transition-all"
@@ -966,6 +1045,7 @@ export default function ColleagueDetail() {
                                   observaciones: proyecto.observaciones || "",
                                   fechaInicio: proyecto.fechaInicio || "",
                                   fechaEntrega: proyecto.fechaEntrega || "",
+                                  archivos: proyecto.archivos || [],
                                 })
                                 setShowProjectForm(true)
                                 setPdfImported(false)
@@ -997,7 +1077,7 @@ export default function ColleagueDetail() {
                         <div className="mb-4 p-4 rounded-xl space-y-3"
                           style={{ background: `oklch(0.60 0.16 145 / 0.08)`, border: `1px solid oklch(0.55 0.16 145 / 0.35)` }}>
                           <p className="text-[13px] font-bold" style={{ color: "oklch(0.40 0.16 145)" }}>
-                            Mover proyecto al grupo
+                            Mover actividad al grupo
                           </p>
                           <select
                             value={grupoSeleccionado}
@@ -1074,6 +1154,41 @@ export default function ColleagueDetail() {
                         </p>
                       )}
 
+                      {/* Archivos adjuntos del proyecto */}
+                      {proyecto.archivos?.length > 0 && (
+                        <div className="flex flex-col gap-1.5 mb-2.5">
+                          {proyecto.archivos.map((f, fi) => {
+                            const isPdf = f.nombre?.toLowerCase().endsWith(".pdf") || f.tipo?.includes("pdf")
+                            const isOpen = previewFile?.url === f.url
+                            return (
+                              <div key={fi} className="flex flex-col rounded-lg border border-border bg-muted/50 overflow-hidden">
+                                <div className="flex items-center gap-0.5">
+                                  <button type="button"
+                                    onClick={() => isPdf ? setPreviewFile(isOpen ? null : f) : window.open(f.url, "_blank")}
+                                    className="flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 hover:bg-muted transition-colors flex-1 min-w-0 text-left"
+                                    style={{ color: `oklch(0.50 0.14 ${pH})` }}>
+                                    {isPdf ? "📄" : "📎"} <span className="truncate flex-1">{f.nombre}</span>
+                                    <span className="text-muted-foreground text-[10px] flex-shrink-0">{isPdf ? (isOpen ? "Cerrar ↑" : "Ver PDF ↓") : "Abrir →"}</span>
+                                  </button>
+                                  {(isOwnProfile || isAdmin) && (
+                                    <button type="button"
+                                      onClick={() => handleDeleteProjectFile(proyecto, f)}
+                                      className="px-1.5 py-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors flex-shrink-0 text-[11px]">
+                                      ✕
+                                    </button>
+                                  )}
+                                </div>
+                                {isPdf && isOpen && (
+                                  <iframe src={f.url} title={f.nombre}
+                                    className="w-full border-t border-border"
+                                    style={{ height: "500px" }} />
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+
                       {/* Timeline */}
                       {(proyecto.fechaInicio || proyecto.fechaEntrega || proyecto.versiones?.length > 0) && (
                         <div className="mt-3 pt-3 border-t border-border space-y-2">
@@ -1145,7 +1260,7 @@ export default function ColleagueDetail() {
                   <rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
                 </svg>
               </div>
-              <p className="text-[13px] font-medium text-muted-foreground">{projectSearch ? "Sin resultados para esa búsqueda." : "Sin proyectos registrados."}</p>
+              <p className="text-[13px] font-medium text-muted-foreground">{projectSearch ? "Sin resultados para esa búsqueda." : "Sin actividades registradas."}</p>
             </div>
           )
         })()}
@@ -1155,7 +1270,38 @@ export default function ColleagueDetail() {
         {activeTab === "bitacora" && (<>
         {/* ── Bitácora ── */}
         <div>
-          <h2 className="text-[18px] font-bold text-foreground tracking-tight mb-4">Bitácora</h2>
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <h2 className="text-[18px] font-bold text-foreground tracking-tight">Bitácora</h2>
+            {(isSuperAdmin || isAdmin) && logs.length > 0 && (
+              <div className="flex items-center gap-2">
+                {logSelectMode && selectedLogIds.size > 0 && (
+                  <button onClick={async () => {
+                    if (!confirm(`¿Eliminar ${selectedLogIds.size} nota${selectedLogIds.size !== 1 ? "s" : ""}?`)) return
+                    await Promise.all([...selectedLogIds].map(lid => deleteLog(lid)))
+                    setLogs(prev => prev.filter(l => !selectedLogIds.has(l.id)))
+                    setSelectedLogIds(new Set())
+                    setLogSelectMode(false)
+                  }} className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-destructive text-white hover:opacity-90 transition-opacity">
+                    Eliminar {selectedLogIds.size}
+                  </button>
+                )}
+                <button onClick={() => { setLogSelectMode(v => !v); setSelectedLogIds(new Set()) }}
+                  className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-colors ${logSelectMode ? "border-primary/40 text-primary bg-primary/10" : "border-border text-muted-foreground hover:text-foreground"}`}>
+                  {logSelectMode ? "Cancelar" : "Seleccionar"}
+                </button>
+                {!logSelectMode && logs.some(l => l.nota?.startsWith("Nuevo proyecto:")) && (
+                  <button onClick={async () => {
+                    if (!confirm("¿Eliminar todas las entradas automáticas de 'Nuevo proyecto:'?")) return
+                    const auto = logs.filter(l => l.nota?.startsWith("Nuevo proyecto:"))
+                    await Promise.all(auto.map(l => deleteLog(l.id)))
+                    setLogs(prev => prev.filter(l => !l.nota?.startsWith("Nuevo proyecto:")))
+                  }} className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-destructive/30 text-destructive hover:bg-destructive/10 transition-colors">
+                    Limpiar automáticas
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
 
           {isOwnProfile && (
             <div className="bg-card border border-border rounded-2xl overflow-hidden mb-3"
@@ -1178,11 +1324,29 @@ export default function ColleagueDetail() {
                   placeholder="¿En qué estás trabajando esta semana?"
                   rows={3}
                   className="w-full bg-muted/50 border border-border rounded-xl px-4 py-3 text-[14px] text-foreground placeholder:text-muted-foreground mb-3 focus:outline-none focus:ring-2 focus:ring-ring/40 resize-none transition-all" />
-                <button type="submit" disabled={saving}
-                  className="text-[13px] font-semibold px-5 py-2 rounded-xl text-white transition-all hover:opacity-90 disabled:opacity-50"
-                  style={{ background: "linear-gradient(135deg, oklch(0.52 0.13 165), oklch(0.44 0.14 185))" }}>
-                  {saving ? "Guardando…" : "Guardar nota"}
-                </button>
+                <input ref={logAttachRef} type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.docx,.doc,.txt,.csv" className="hidden"
+                  onChange={e => { Array.from(e.target.files||[]).forEach(f => handleAttachFile(f, `logs/${id}`, meta => setLogAttachFiles(p => [...p, meta]), setLogAttachUploading)); e.target.value="" }} />
+                {logAttachFiles.length > 0 && (
+                  <div className="flex flex-col gap-1 mb-2">
+                    {logAttachFiles.map((f, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[12px] px-2 py-1 rounded-lg border border-border bg-muted/40">
+                        <span className="flex-1 truncate">{f.nombre}</span>
+                        <button type="button" onClick={() => setLogAttachFiles(p => p.filter((_,j)=>j!==i))} className="text-destructive hover:opacity-70">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => logAttachRef.current?.click()} disabled={logAttachUploading}
+                    className="text-[12px] font-medium px-3 py-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
+                    📎 {logAttachUploading ? "Subiendo…" : "Adjuntar archivo"}
+                  </button>
+                  <button type="submit" disabled={saving || logAttachUploading}
+                    className="text-[13px] font-semibold px-5 py-2 rounded-xl text-white transition-all hover:opacity-90 disabled:opacity-50"
+                    style={{ background: "linear-gradient(135deg, oklch(0.52 0.13 165), oklch(0.44 0.14 185))" }}>
+                    {saving ? "Guardando…" : "Guardar nota"}
+                  </button>
+                </div>
               </form>
             </div>
           )}
@@ -1204,7 +1368,17 @@ export default function ColleagueDetail() {
             return filteredLogs.length > 0 ? (
               <div className="overflow-y-auto space-y-2 pr-0.5" style={{ maxHeight: "420px" }}>
                 {filteredLogs.map(log => (
-                  <div key={log.id} className="bg-card border border-border rounded-xl p-4 group">
+                  <div key={log.id}
+                    className={`bg-card border rounded-xl p-4 group transition-colors ${logSelectMode && selectedLogIds.has(log.id) ? "border-destructive/50 bg-destructive/5" : "border-border"}`}
+                    onClick={logSelectMode ? () => setSelectedLogIds(prev => { const s = new Set(prev); s.has(log.id) ? s.delete(log.id) : s.add(log.id); return s }) : undefined}
+                    style={logSelectMode ? { cursor: "pointer" } : {}}>
+                    {logSelectMode && (
+                      <div className="flex items-center gap-2 mb-2">
+                        <input type="checkbox" readOnly checked={selectedLogIds.has(log.id)}
+                          className="w-4 h-4 accent-destructive pointer-events-none" />
+                        <span className="text-[11px] text-muted-foreground">Seleccionar para eliminar</span>
+                      </div>
+                    )}
                     {editingLogId === log.id ? (
                       <div className="space-y-2">
                         <textarea value={editingLogText} onChange={e => setEditingLogText(e.target.value)}
@@ -1228,19 +1402,32 @@ export default function ColleagueDetail() {
                           style={{ backgroundColor: "oklch(0.52 0.13 165)" }} />
                         <div className="flex-1 min-w-0">
                           <p className="text-[14px] text-foreground leading-relaxed">{log.nota}</p>
+                          {log.archivos?.length > 0 && (
+                            <div className="flex flex-col gap-1 mt-2">
+                              {log.archivos.map((f, i) => (
+                                <a key={i} href={f.url} target="_blank" rel="noopener noreferrer"
+                                  className="flex items-center gap-2 text-[12px] px-2 py-1 rounded-lg border border-border bg-muted/40 hover:bg-muted transition-colors max-w-xs">
+                                  <span className="text-muted-foreground">📎</span>
+                                  <span className="truncate text-foreground">{f.nombre}</span>
+                                </a>
+                              ))}
+                            </div>
+                          )}
                           <div className="flex justify-between items-center mt-1.5">
                             <p className="text-[11px] text-muted-foreground capitalize">
                               {log.createdAt?.toDate
                                 ? format(log.createdAt.toDate(), "EEEE d 'de' MMMM, yyyy", { locale: es })
                                 : ""}
                             </p>
-                            {(isOwnProfile || log.creadoPor === user?.uid) && (
-                              <div className="flex gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => handleStartEditLog(log)}
-                                  className="text-[12px] font-semibold hover:opacity-70 transition-opacity"
-                                  style={{ color: "oklch(0.42 0.14 165)" }}>
-                                  Editar
-                                </button>
+                            {(isSuperAdmin || isAdmin || isOwnProfile || log.creadoPor === user?.uid) && (
+                              <div className="flex gap-3">
+                                {(isOwnProfile || log.creadoPor === user?.uid) && (
+                                  <button onClick={() => handleStartEditLog(log)}
+                                    className="text-[12px] font-semibold hover:opacity-70 transition-opacity"
+                                    style={{ color: "oklch(0.42 0.14 165)" }}>
+                                    Editar
+                                  </button>
+                                )}
                                 <button onClick={() => handleDeleteLog(log.id)}
                                   className="text-[12px] text-destructive hover:opacity-70 transition-opacity">
                                   Eliminar
@@ -1451,8 +1638,23 @@ export default function ColleagueDetail() {
                       onChange={e => setTaskForm(f => ({ ...f, avance: e.target.value }))}
                       className="w-full accent-primary" />
                   </div>
+                  {/* Archivos adjuntos para la tarea */}
+                  <div className="space-y-1.5">
+                    <input ref={taskAttachRef} type="file" multiple accept="image/*,.pdf,.xlsx,.xls,.docx,.doc,.txt,.csv" className="hidden"
+                      onChange={e => { Array.from(e.target.files||[]).forEach(f => handleAttachFile(f, `tareas-nuevas/${id}`, meta => setTaskAttachFiles(p => [...p, meta]), setTaskAttachUploading)); e.target.value="" }} />
+                    {taskAttachFiles.map((f, i) => (
+                      <div key={i} className="flex items-center gap-2 text-[12px] px-2 py-1 rounded-lg border border-border bg-muted/40">
+                        <span className="flex-1 truncate">{f.nombre}</span>
+                        <button type="button" onClick={() => setTaskAttachFiles(p => p.filter((_,j)=>j!==i))} className="text-destructive">✕</button>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => taskAttachRef.current?.click()} disabled={taskAttachUploading}
+                      className="text-[12px] font-medium px-3 py-1.5 rounded-lg border border-dashed border-border text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors">
+                      📎 {taskAttachUploading ? "Subiendo…" : "Adjuntar archivo"}
+                    </button>
+                  </div>
                   <div className="flex justify-end">
-                    <button type="submit" disabled={savingTask}
+                    <button type="submit" disabled={savingTask || taskAttachUploading}
                       className="h-10 px-5 rounded-xl text-[13px] font-bold text-white transition-all hover:opacity-90 disabled:opacity-50"
                       style={{ background: "linear-gradient(135deg, oklch(0.58 0.20 260), oklch(0.50 0.22 280))" }}>
                       {savingTask ? "Guardando…" : "Guardar tarea"}

@@ -165,6 +165,26 @@ export const deletePerfilFile = async (storagePath) => {
 }
 
 // ── Archivos adjuntos a tareas de grupo ──────────────────────────────────────
+// ── Adjunto genérico (proyectos, logs, etc.) ─────────────────────────────────
+export const uploadAttachment = (basePath, file, { onProgress } = {}) => {
+  return new Promise((resolve, reject) => {
+    const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`
+    const storagePath = `${basePath}/${safeName}`
+    const storageRef = ref(storage, storagePath)
+    const task = uploadBytesResumable(storageRef, file)
+    task.on("state_changed",
+      snap => onProgress?.(Math.round((snap.bytesTransferred / snap.totalBytes) * 100)),
+      reject,
+      async () => {
+        try {
+          const url = await getDownloadURL(task.snapshot.ref)
+          resolve({ url, nombre: file.name, size: file.size, tipo: file.type || "application/octet-stream", storagePath })
+        } catch (err) { reject(err) }
+      }
+    )
+  })
+}
+
 export const uploadGrupoTaskFile = (grupoId, taskId, file, { onProgress } = {}) => {
   return new Promise((resolve, reject) => {
     const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`

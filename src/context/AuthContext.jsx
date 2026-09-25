@@ -8,6 +8,12 @@ import { ensureUsuarioDoc } from "@/services/usuarios.service"
 // Superadmins fijos — fuente de verdad para el nivel más alto
 export const SUPER_ADMIN_EMAILS = ["andrea_ramirezt@cun.edu.co", "angela_bernalm@cun.edu.co", "jarvey_gonzalez@cun.edu.co"]
 
+// Directivos institucionales — aparecen en la lista de miembros de cada equipo con su rol
+export const DIRECTIVOS = [
+  { email: "angela_bernalm@cun.edu.co", nombre: "Angela Bernal", rol: "Directora", hue: 280 },
+  { email: "jarvey_gonzalez@cun.edu.co", nombre: "Jarvey González", rol: "Vicerrector", hue: 210 },
+]
+
 async function backfillMemberUids(companionId, uid) {
   try {
     const snap = await getDocs(collection(db, "equipos"))

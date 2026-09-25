@@ -1,13 +1,14 @@
 import { collection, addDoc, getDocs, query, where, serverTimestamp, deleteDoc, updateDoc, doc } from "firebase/firestore"
 import { db } from "@/services/firebase"
 
-export const addLog = async ({ colleagueId, colleagueName, nota, userId, semilleroId }) => {
+export const addLog = async ({ colleagueId, colleagueName, nota, userId, semilleroId, archivos }) => {
   return await addDoc(collection(db, "logs"), {
     colleagueId,
     colleagueName,
     nota,
     creadoPor: userId,
     semilleroId: semilleroId || null,
+    archivos: archivos || [],
     createdAt: serverTimestamp(),
   })
 }

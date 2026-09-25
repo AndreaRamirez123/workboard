@@ -1,8 +1,8 @@
 import { useEffect, useState, useRef } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { useAuth } from "@/context/AuthContext"
+import { useAuth, DIRECTIVOS } from "@/context/AuthContext"
 import { getColleaguesBySemillero, bulkCreateColleagues, deleteColleague } from "@/services/colleagues.service"
-import { getSemillero } from "@/services/semilleros.service"
+import { getSemillero, updateSemillero } from "@/services/semilleros.service"
 import { parseColleaguesFile } from "@/utils/parseColleaguesFile"
 import { getAllLogs } from "@/services/logs.service"
 import { Button } from "@/components/ui/button"
@@ -77,36 +77,28 @@ function rgbToHex(r, g, b) {
 }
 
 function calcWorkloadScore(proyectos = []) {
-  const today = new Date()
-  let score = 0
+  let count = 0
   for (const p of proyectos) {
     const avance = p.avance ?? 0
-    if (p.estado === "Hecho" || avance >= 100) continue
-    const remaining = (100 - avance) / 100
-    let urgency = 1.0
-    if (p.fechaLimite) {
-      const daysLeft = Math.ceil((new Date(p.fechaLimite) - today) / 86400000)
-      if (daysLeft < 0) urgency = 1.5
-      else if (daysLeft <= 7) urgency = 1.2
-    }
-    score += remaining * urgency
+    if (p.estado === "Finalizado" || p.estado === "Hecho" || p.estado === "Suspendido" || avance >= 100) continue
+    count++
   }
-  return score
+  return count
 }
 
 function workloadRingColor(score) {
   if (score === 0) return "var(--border)"
-  if (score < 1) return "oklch(0.52 0.13 165)"
-  if (score < 2) return "oklch(0.75 0.15 80)"
-  if (score < 3) return "oklch(0.65 0.20 40)"
+  if (score === 1) return "oklch(0.52 0.13 165)"
+  if (score === 2) return "oklch(0.75 0.15 80)"
+  if (score === 3) return "oklch(0.65 0.20 40)"
   return "oklch(0.577 0.245 27.325)"
 }
 
 function workloadLabel(score) {
   if (score === 0) return "Libre"
-  if (score < 1) return "Disponible"
-  if (score < 2) return "Ocupado"
-  if (score < 3) return "Carga alta"
+  if (score === 1) return "Disponible"
+  if (score === 2) return "Ocupado"
+  if (score === 3) return "Carga alta"
   return "Sobrecarga"
 }
 
@@ -184,6 +176,8 @@ export default function Dashboard() {
   const [importSaving, setImportSaving] = useState(false)
   const [importSuccessCount, setImportSuccessCount] = useState(null)
   const [teamCoordUids, setTeamCoordUids] = useState([])
+  const [showCoordPicker, setShowCoordPicker] = useState(false)
+  const [savingCoord, setSavingCoord] = useState(false)
 
   useEffect(() => {
     if (!semilleroId) return
@@ -769,7 +763,7 @@ export default function Dashboard() {
                   <p className="text-[13px]" style={{ color: "oklch(1 0 0 / 0.65)" }}>
                     {loadingData
                       ? "Cargando datos del equipo…"
-                      : `${colleagues.length} personas · ${totalProjects} proyectos · ${totalTools} herramientas`}
+                      : `${colleagues.length} personas · ${totalProjects} actividades · ${totalTools} herramientas`}
                   </p>
                 </div>
 
@@ -796,14 +790,14 @@ export default function Dashboard() {
                         icon: <Users size={20} />,
                         value: colleagues.length,
                         label: "Personas",
-                        sub: `${colleaguesWithProjects} con proyectos activos`,
+                        sub: `${colleaguesWithProjects} con actividades activas`,
                         progress: colleagues.length > 0 ? colleaguesWithProjects / colleagues.length : 0,
                         hue: 165,
                       },
                       {
                         icon: <Briefcase size={20} />,
                         value: totalProjects,
-                        label: "Proyectos",
+                        label: "Actividades",
                         sub: `Avance promedio: ${avgProgress}%`,
                         progress: avgProgress / 100,
                         hue: 230,
@@ -854,41 +848,89 @@ export default function Dashboard() {
                     ...teamCoordUids,
                     ...(semillero?.coordinadores || []),
                   ])
+                  const extraIds = new Set(semillero?.coordinadoresColegas || [])
                   const coords = colleagues.filter(c =>
                     (c.uid && allCoordUids.has(c.uid)) ||
-                    (!c.uid && c.rolAsignado === "admin")
+                    (!c.uid && c.rolAsignado === "admin") ||
+                    extraIds.has(c.id)
                   )
-                  if (coords.length === 0) return null
+                  const nonCoords = colleagues.filter(c => !coords.some(x => x.id === c.id))
+
+                  const handleAddCoord = async (colleagueId) => {
+                    if (!colleagueId) return
+                    setSavingCoord(true)
+                    const updated = [...(semillero?.coordinadoresColegas || []), colleagueId]
+                    await updateSemillero(semilleroId, { coordinadoresColegas: updated })
+                    setSemillero(prev => ({ ...prev, coordinadoresColegas: updated }))
+                    setShowCoordPicker(false)
+                    setSavingCoord(false)
+                  }
+
+                  const handleRemoveCoord = async (colleagueId) => {
+                    const updated = (semillero?.coordinadoresColegas || []).filter(id => id !== colleagueId)
+                    await updateSemillero(semilleroId, { coordinadoresColegas: updated })
+                    setSemillero(prev => ({ ...prev, coordinadoresColegas: updated }))
+                  }
+
                   return (
                     <div className="rounded-2xl border overflow-hidden"
                       style={{ borderColor: "oklch(0.52 0.13 165 / 0.25)" }}>
-                      <div className="px-4 py-2 border-b"
+                      <div className="px-4 py-2 border-b flex items-center justify-between"
                         style={{ background: "oklch(0.52 0.13 165 / 0.08)", borderColor: "oklch(0.52 0.13 165 / 0.18)" }}>
                         <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: "oklch(0.42 0.13 165)" }}>
                           {coords.length === 1 ? "Coordinador del equipo" : "Coordinadores del equipo"}
                         </p>
+                        {isSuperAdmin && (
+                          <button onClick={() => setShowCoordPicker(v => !v)}
+                            className="text-[10px] font-semibold px-2 py-0.5 rounded-md transition-colors"
+                            style={{ background: "oklch(0.52 0.13 165 / 0.15)", color: "oklch(0.40 0.13 165)" }}>
+                            {showCoordPicker ? "Cancelar" : "+ Asignar"}
+                          </button>
+                        )}
                       </div>
-                      {coords.map(coord => {
-                        const h = coord.colorHue ?? hashHue(coord.id)
-                        const h2 = coord.colorHue2 ?? null
-                        return (
-                          <div key={coord.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-0"
-                            style={{ background: "oklch(0.52 0.13 165 / 0.03)", borderColor: "oklch(0.52 0.13 165 / 0.12)" }}>
-                            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-[12px] font-bold flex-shrink-0 overflow-hidden"
-                              style={{ background: coord.avatarUrl ? "var(--muted)" : `linear-gradient(135deg, oklch(0.68 0.18 ${h}), oklch(0.54 0.22 ${h2 ?? (parseInt(h) + 40) % 360}))` }}>
-                              {coord.avatarUrl
-                                ? <img src={coord.avatarUrl} alt="" className="w-full h-full object-cover" />
-                                : (coord.nombre?.charAt(0)?.toUpperCase() || "?")}
+                      {showCoordPicker && isSuperAdmin && (
+                        <div className="px-4 py-2.5 border-b" style={{ borderColor: "oklch(0.52 0.13 165 / 0.12)" }}>
+                          <select onChange={e => handleAddCoord(e.target.value)} defaultValue=""
+                            className="w-full text-[12px] bg-muted border border-border rounded-lg px-2 py-1.5 text-foreground focus:outline-none">
+                            <option value="" disabled>Seleccionar colega…</option>
+                            {nonCoords.map(c => (
+                              <option key={c.id} value={c.id}>{c.nombre}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {coords.length === 0 && !showCoordPicker ? (
+                        <div className="px-4 py-3">
+                          <p className="text-[12px] text-muted-foreground italic">Sin coordinador asignado.</p>
+                        </div>
+                      ) : (
+                        coords.map(coord => {
+                          const h = coord.colorHue ?? hashHue(coord.id)
+                          const h2 = coord.colorHue2 ?? null
+                          const isExtra = extraIds.has(coord.id)
+                          return (
+                            <div key={coord.id} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-0"
+                              style={{ background: "oklch(0.52 0.13 165 / 0.03)", borderColor: "oklch(0.52 0.13 165 / 0.12)" }}>
+                              <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white text-[12px] font-bold flex-shrink-0 overflow-hidden"
+                                style={{ background: coord.avatarUrl ? "var(--muted)" : `linear-gradient(135deg, oklch(0.68 0.18 ${h}), oklch(0.54 0.22 ${h2 ?? (parseInt(h) + 40) % 360}))` }}>
+                                {coord.avatarUrl
+                                  ? <img src={coord.avatarUrl} alt="" className="w-full h-full object-cover" />
+                                  : (coord.nombre?.charAt(0)?.toUpperCase() || "?")}
+                              </div>
+                              <span className="flex-1 text-[13px] font-semibold text-foreground truncate">{coord.nombre}</span>
+                              {isSuperAdmin && isExtra && (
+                                <button onClick={() => handleRemoveCoord(coord.id)}
+                                  className="text-[10px] text-destructive hover:opacity-70 transition-opacity flex-shrink-0">✕</button>
+                              )}
+                              <button onClick={() => navigate(`/semillero/${semilleroId}/colleague/${coord.id}`)}
+                                className="text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors flex-shrink-0"
+                                style={{ background: "oklch(0.52 0.13 165 / 0.12)", color: "oklch(0.40 0.13 165)" }}>
+                                Ver perfil
+                              </button>
                             </div>
-                            <span className="flex-1 text-[13px] font-semibold text-foreground truncate">{coord.nombre}</span>
-                            <button onClick={() => navigate(`/semillero/${semilleroId}/colleague/${coord.id}`)}
-                              className="text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors flex-shrink-0"
-                              style={{ background: "oklch(0.52 0.13 165 / 0.12)", color: "oklch(0.40 0.13 165)" }}>
-                              Ver perfil
-                            </button>
-                          </div>
-                        )
-                      })}
+                          )
+                        })
+                      )}
                     </div>
                   )
                 })()}
@@ -968,6 +1010,22 @@ export default function Dashboard() {
                     )}
                   </div>
                 )}
+
+                {/* Directivos institucionales */}
+                <div className="flex flex-wrap gap-3 mb-2">
+                  {DIRECTIVOS.map(d => (
+                    <div key={d.email} className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-border bg-card">
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-[12px] flex-shrink-0"
+                        style={{ background: `linear-gradient(135deg, oklch(0.62 0.16 ${d.hue}), oklch(0.48 0.20 ${(d.hue + 30) % 360}))` }}>
+                        {d.nombre.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[12px] font-semibold text-foreground leading-tight truncate">{d.nombre}</p>
+                        <p className="text-[10px] font-semibold leading-tight" style={{ color: `oklch(0.62 0.16 ${d.hue})` }}>{d.rol}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
                 {/* Person grid / list / empty */}
                 {loadingData ? (
@@ -1153,7 +1211,13 @@ export default function Dashboard() {
                                     </span>
                                   )}
                                 </div>
-                                <p className="text-[12px] text-muted-foreground mt-0.5 truncate">{c.rol || "Sin rol"}</p>
+                                {(() => {
+                                  const dir = DIRECTIVOS.find(d => d.email === c.email)
+                                  const label = c.rol || dir?.rol
+                                  return label
+                                    ? <p className="text-[12px] font-semibold mt-0.5 truncate" style={{ color: dir && !c.rol ? `oklch(0.62 0.16 ${dir.hue})` : "var(--muted-foreground)" }}>{label}</p>
+                                    : <p className="text-[12px] text-muted-foreground mt-0.5 truncate">Sin rol</p>
+                                })()}
                                 <div className="flex flex-wrap gap-1 mt-1.5">
                                   {c.area && (
                                     <span className="inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full leading-4"
@@ -1183,10 +1247,14 @@ export default function Dashboard() {
                             <div>
                               <div className="flex items-center justify-between mb-1.5">
                                 <span className="text-[11px] text-muted-foreground">
-                                  {projectCount} proyecto{projectCount !== 1 ? "s" : ""}
+                                  {(() => {
+                                    const active = (c.proyectos || []).filter(p => p.estado !== "Finalizado" && p.estado !== "Hecho" && p.estado !== "Suspendido").length
+                                    const done   = (c.proyectos || []).filter(p => p.estado === "Finalizado" || p.estado === "Hecho").length
+                                    return <>{active} activo{active !== 1 ? "s" : ""}{done > 0 && <span className="opacity-55"> · {done} fin.</span>}</>
+                                  })()}
                                 </span>
                                 <span className="text-[10px] font-semibold" style={{ color: workloadRingColor(workScore) }}>
-                                  {workloadLabel(workScore)}
+                                  {workloadLabel(workScore)}{workScore > 0 ? ` · ${workScore}` : ""}
                                 </span>
                               </div>
                               <div className="h-1.5 bg-muted rounded-full overflow-hidden">
@@ -1263,7 +1331,13 @@ export default function Dashboard() {
                                 </span>
                               )}
                             </div>
-                            <p className="text-[12px] text-muted-foreground truncate">{c.rol || "Sin rol"}</p>
+                            {(() => {
+                              const dir = DIRECTIVOS.find(d => d.email === c.email)
+                              const label = c.rol || dir?.rol
+                              return label
+                                ? <p className="text-[12px] font-semibold truncate" style={{ color: dir && !c.rol ? `oklch(0.62 0.16 ${dir.hue})` : "var(--muted-foreground)" }}>{label}</p>
+                                : <p className="text-[12px] text-muted-foreground truncate">Sin rol</p>
+                            })()}
                           </div>
                           <div className="hidden sm:flex gap-1 flex-wrap max-w-[140px] justify-end">
                             {(c.herramientas || []).slice(0, 2).map(t => (
@@ -1281,7 +1355,7 @@ export default function Dashboard() {
                                 style={{ width: `${Math.min(100, workScore * 25)}%`, background: workloadRingColor(workScore) }} />
                             </div>
                             <span className="text-[10px] font-semibold text-right" style={{ color: workloadRingColor(workScore) }}>
-                              {workloadLabel(workScore)}
+                              {workloadLabel(workScore)}{workScore > 0 ? ` · ${workScore}` : ""}
                             </span>
                           </div>
                           <span className="text-muted-foreground group-hover:text-primary transition-colors flex-shrink-0">→</span>
