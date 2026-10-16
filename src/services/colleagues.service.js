@@ -91,6 +91,18 @@ export const updateProject = async (colleagueId, oldProject, newProject) => {
 }
 
 // ── Licencia (maternidad, incapacidad, etc.) ────────────────────────────────
+export const LICENCIA_TIPOS = [
+  { tipo: "Maternidad",             icono: "🍼" },
+  { tipo: "Paternidad",             icono: "👶" },
+  { tipo: "Incapacidad médica",     icono: "🩺" },
+  { tipo: "Luto",                   icono: "🕊️" },
+  { tipo: "Calamidad doméstica",    icono: "🏠" },
+  { tipo: "Vacaciones",             icono: "🌴" },
+  { tipo: "Licencia no remunerada", icono: "📄" },
+  { tipo: "Otra",                   icono: "📌" },
+]
+export const licenciaIcono = (tipo) => LICENCIA_TIPOS.find(t => t.tipo === tipo)?.icono || "📌"
+
 // licencia: { tipo, desde: "yyyy-MM-dd", hasta: "yyyy-MM-dd" | "", nota } — null para quitarla
 export const setLicencia = async (colleagueId, licencia) => {
   return await updateDoc(doc(db, "companeros", colleagueId), { licencia: licencia || null })

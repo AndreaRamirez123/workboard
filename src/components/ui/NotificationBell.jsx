@@ -12,6 +12,7 @@ const ICONS = {
   feedback_grupo:      "💬",
   feedback_recibido:   "💬",
   proyecto_agregado:   "🗂️",
+  licencia:            "🗓️",
   general:             "🔔",
 }
 

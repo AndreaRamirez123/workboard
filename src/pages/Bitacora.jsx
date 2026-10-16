@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useAuth } from "@/context/AuthContext"
 import { getAllLogs, deleteLog, updateLog } from "@/services/logs.service"
-import { getColleagues, isEnLicencia } from "@/services/colleagues.service"
+import { getColleagues, isEnLicencia, licenciaIcono } from "@/services/colleagues.service"
 import { ThemeToggle } from "@/components/ui/ThemeToggle"
 import { Footer } from "@/components/ui/Footer"
 import { format, startOfWeek, endOfWeek, isWithinInterval } from "date-fns"
@@ -109,12 +109,12 @@ export default function Bitacora() {
         {!loading && enLicencia.length > 0 && (
           <div className="rounded-2xl px-5 py-3.5 mb-4"
             style={{ backgroundColor: "oklch(0.65 0.14 330 / 0.10)", border: "1px solid oklch(0.65 0.14 330 / 0.35)" }}>
-            <p className="text-[12px] font-semibold text-foreground mb-2">🍼 En licencia — no requieren bitácora</p>
+            <p className="text-[12px] font-semibold text-foreground mb-2">En licencia — no requieren bitácora</p>
             <div className="flex flex-wrap gap-2">
               {enLicencia.map(c => (
                 <button key={c.id} onClick={() => navigate(`/colleague/${c.id}`)}
                   className="text-[12px] px-2.5 py-1 rounded-full bg-card border border-border text-foreground hover:opacity-80 transition-opacity">
-                  {c.nombre} <span className="text-muted-foreground">· {c.licencia.tipo}</span>
+                  {licenciaIcono(c.licencia.tipo)} {c.nombre} <span className="text-muted-foreground">· {c.licencia.tipo}</span>
                 </button>
               ))}
             </div>

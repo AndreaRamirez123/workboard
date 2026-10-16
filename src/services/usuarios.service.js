@@ -46,7 +46,12 @@ export const getAllUsuarios = async () => {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
 }
 
-export const getAdminsBySemillero = async (semilleroId) => {
+export const getSuperAdmins = async () => {
+  const snap = await getDocs(query(collection(db, "usuarios"), where("role", "==", "superadmin")))
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+}
+
+export const getAdminsBySemillero =async (semilleroId) => {
   const q = query(collection(db, "usuarios"), where("semilleroId", "==", semilleroId), where("role", "==", "admin"))
   const snap = await getDocs(q)
   return snap.docs.map(d => ({ id: d.id, ...d.data() }))
