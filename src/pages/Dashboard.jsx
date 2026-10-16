@@ -14,6 +14,8 @@ import {
   LogOut, HelpCircle, Copy, ExternalLink, TrendingUp, Menu, Home, CheckSquare
 } from "lucide-react"
 import { NotificationBell } from "@/components/ui/NotificationBell"
+import { LicenciasBanner } from "@/components/ui/LicenciasBanner"
+import { isEnLicencia, licenciaIcono } from "@/services/colleagues.service"
 import { Tutorial, resetTutorial } from "@/components/ui/Tutorial"
 import { MetricsDashboard } from "@/components/ui/MetricsDashboard"
 import { TeamDashboard } from "@/components/ui/TeamDashboard"
@@ -727,6 +729,11 @@ export default function Dashboard() {
           {/* ── PAGE CONTENT ────────────────────────────────────────────── */}
           <main className="flex-1 p-5 sm:p-7">
 
+            {/* ══ EN LICENCIA (coordinadores) ═══════════════════════════════ */}
+            {isAdmin && (tab === "resumen" || tab === "equipo") && (
+              <div className="mb-6"><LicenciasBanner colleagues={colleagues} /></div>
+            )}
+
             {/* ══ RESUMEN ═══════════════════════════════════════════════════ */}
             {isAdmin && tab === "resumen" && (
               <TeamDashboard colleagues={colleagues} logs={logs} />
@@ -1210,6 +1217,13 @@ export default function Dashboard() {
                                       TÚ
                                     </span>
                                   )}
+                                  {isEnLicencia(c) && (
+                                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                                      title={`En licencia: ${c.licencia.tipo}`}
+                                      style={{ backgroundColor: "oklch(0.65 0.14 330 / 0.14)", color: "oklch(0.55 0.16 330)" }}>
+                                      {licenciaIcono(c.licencia.tipo)} EN LICENCIA
+                                    </span>
+                                  )}
                                 </div>
                                 {(() => {
                                   const dir = DIRECTIVOS.find(d => d.email === c.email)
@@ -1322,6 +1336,13 @@ export default function Dashboard() {
                                 <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full tracking-wide"
                                   style={{ backgroundColor: "oklch(0.52 0.13 165 / 0.14)", color: "oklch(0.42 0.13 165)" }}>
                                   TÚ
+                                </span>
+                              )}
+                              {isEnLicencia(c) && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                                  title={`En licencia: ${c.licencia.tipo}`}
+                                  style={{ backgroundColor: "oklch(0.65 0.14 330 / 0.14)", color: "oklch(0.55 0.16 330)" }}>
+                                  {licenciaIcono(c.licencia.tipo)} EN LICENCIA
                                 </span>
                               )}
                               {c.area && (

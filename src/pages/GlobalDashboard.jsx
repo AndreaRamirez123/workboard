@@ -7,6 +7,7 @@ import { getAllLogs, deleteLog } from "@/services/logs.service"
 import { ThemeToggle } from "@/components/ui/ThemeToggle"
 import { MetricsDashboard } from "@/components/ui/MetricsDashboard"
 import { NotificationBell } from "@/components/ui/NotificationBell"
+import { LicenciasBanner } from "@/components/ui/LicenciasBanner"
 import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import {
@@ -359,6 +360,7 @@ export default function GlobalDashboard() {
               </div>
             ) : tab === "resumen" ? (
               <>
+                <LicenciasBanner colleagues={colleagues} semilleros={semilleros} />
                 {/* Stat cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <StatCard label="Equipos activos" value={semilleros.length} hue="165" />
