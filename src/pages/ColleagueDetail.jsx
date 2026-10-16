@@ -3,7 +3,7 @@ import { downloadFile } from "@/utils/download"
 import { useParams, useNavigate, useLocation } from "react-router-dom"
 import { doc, getDoc, updateDoc, arrayUnion, addDoc, collection, serverTimestamp } from "firebase/firestore"
 import { db } from "@/services/firebase"
-import { deleteColleague, deleteProject, updateProject } from "@/services/colleagues.service"
+import { deleteColleague, deleteProject, updateProject, setLicencia, isEnLicencia } from "@/services/colleagues.service"
 import { extractPdfText, parseCunPdf } from "@/utils/parsePropuesta"
 import { getGrupos, addGrupoProject } from "@/services/groups.service"
 import { addLog, getLogs, deleteLog, updateLog } from "@/services/logs.service"
@@ -112,6 +112,9 @@ export default function ColleagueDetail() {
   const [logSelectMode, setLogSelectMode] = useState(false)
   const [selectedLogIds, setSelectedLogIds] = useState(new Set())
   const notaRef = useRef(null)
+  const [showLicenciaForm, setShowLicenciaForm] = useState(false)
+  const [licenciaForm, setLicenciaForm] = useState({ tipo: "Maternidad", desde: "", hasta: "", nota: "" })
+  const [savingLicencia, setSavingLicencia] = useState(false)
 
   const [feedback, setFeedback] = useState([])
   const [feedbackText, setFeedbackText] = useState("")
@@ -541,6 +544,16 @@ export default function ColleagueDetail() {
     if (!confirm("¿Eliminar esta nota?")) return
     await deleteLog(logId)
     setLogs(prev => prev.filter(l => l.id !== logId))
+  }
+
+  const handleSaveLicencia = async (licencia) => {
+    setSavingLicencia(true)
+    try {
+      await setLicencia(id, licencia)
+      setCompanero(prev => ({ ...prev, licencia }))
+      setShowLicenciaForm(false)
+    } catch { alert("No se pudo guardar la licencia.") }
+    finally { setSavingLicencia(false) }
   }
 
   const handleEmojiClick = (emojiData) => {
@@ -1272,8 +1285,15 @@ export default function ColleagueDetail() {
         <div>
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="text-[18px] font-bold text-foreground tracking-tight">Bitácora</h2>
-            {(isSuperAdmin || isAdmin) && logs.length > 0 && (
+            {(isSuperAdmin || isAdmin) && (
               <div className="flex items-center gap-2">
+                {!companero?.licencia && !logSelectMode && (
+                  <button onClick={() => { setLicenciaForm({ tipo: "Maternidad", desde: format(new Date(), "yyyy-MM-dd"), hasta: "", nota: "" }); setShowLicenciaForm(v => !v) }}
+                    className="text-[11px] font-medium px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors">
+                    🍼 Marcar licencia
+                  </button>
+                )}
+                {logs.length > 0 && (<>
                 {logSelectMode && selectedLogIds.size > 0 && (
                   <button onClick={async () => {
                     if (!confirm(`¿Eliminar ${selectedLogIds.size} nota${selectedLogIds.size !== 1 ? "s" : ""}?`)) return
@@ -1299,11 +1319,82 @@ export default function ColleagueDetail() {
                     Limpiar automáticas
                   </button>
                 )}
+                </>)}
               </div>
             )}
           </div>
 
-          {isOwnProfile && (
+          {/* ── Formulario de licencia (solo coordinadores) ── */}
+          {showLicenciaForm && (isSuperAdmin || isAdmin) && (
+            <div className="bg-card border border-border rounded-2xl p-5 mb-3 space-y-3"
+              style={{ borderTopColor: "oklch(0.65 0.14 330)", borderTopWidth: "3px" }}>
+              <p className="text-[13px] font-semibold text-foreground">Registrar licencia</p>
+              <p className="text-[12px] text-muted-foreground -mt-2">Mientras dure, esta persona no tendrá que llenar la bitácora ni aparecerá como pendiente.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide space-y-1">
+                  <span>Tipo</span>
+                  <select value={licenciaForm.tipo} onChange={e => setLicenciaForm(f => ({ ...f, tipo: e.target.value }))}
+                    className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-[13px] font-normal normal-case text-foreground">
+                    {["Maternidad", "Paternidad", "Incapacidad médica", "Otra"].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </label>
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide space-y-1">
+                  <span>Desde</span>
+                  <input type="date" value={licenciaForm.desde} onChange={e => setLicenciaForm(f => ({ ...f, desde: e.target.value }))}
+                    className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-[13px] font-normal text-foreground" />
+                </label>
+                <label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide space-y-1">
+                  <span>Hasta (opcional)</span>
+                  <input type="date" value={licenciaForm.hasta} min={licenciaForm.desde} onChange={e => setLicenciaForm(f => ({ ...f, hasta: e.target.value }))}
+                    className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-[13px] font-normal text-foreground" />
+                </label>
+              </div>
+              <input type="text" placeholder="Nota (opcional)" value={licenciaForm.nota} onChange={e => setLicenciaForm(f => ({ ...f, nota: e.target.value }))}
+                className="w-full bg-muted/50 border border-border rounded-xl px-3 py-2 text-[13px] text-foreground placeholder:text-muted-foreground" />
+              <div className="flex gap-2">
+                <button disabled={savingLicencia || !licenciaForm.desde}
+                  onClick={() => handleSaveLicencia({ ...licenciaForm, nota: licenciaForm.nota.trim(), registradaPor: user?.email || "" })}
+                  className="text-[12px] font-semibold px-3.5 py-1.5 rounded-lg text-white disabled:opacity-50"
+                  style={{ backgroundColor: "oklch(0.55 0.14 330)" }}>
+                  {savingLicencia ? "Guardando…" : "Guardar licencia"}
+                </button>
+                <button onClick={() => setShowLicenciaForm(false)}
+                  className="text-[12px] font-medium px-3.5 py-1.5 rounded-lg border border-border text-muted-foreground hover:text-foreground transition-colors">
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── Aviso de licencia ── */}
+          {companero?.licencia && (
+            <div className="rounded-2xl px-5 py-4 mb-3 flex items-start gap-3 flex-wrap"
+              style={{ backgroundColor: "oklch(0.65 0.14 330 / 0.10)", border: "1px solid oklch(0.65 0.14 330 / 0.35)" }}>
+              <span className="text-xl leading-none">🍼</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[14px] font-semibold text-foreground">
+                  {isEnLicencia(companero) ? "En licencia" : "Licencia programada / finalizada"} de {companero.licencia.tipo?.toLowerCase()}
+                </p>
+                <p className="text-[12px] text-muted-foreground mt-0.5">
+                  Desde {format(parseLocalDate(companero.licencia.desde), "d 'de' MMMM, yyyy", { locale: es })}
+                  {companero.licencia.hasta
+                    ? ` hasta ${format(parseLocalDate(companero.licencia.hasta), "d 'de' MMMM, yyyy", { locale: es })}`
+                    : " · sin fecha de regreso"}
+                  {isEnLicencia(companero) && " — no se requiere llenar la bitácora."}
+                </p>
+                {companero.licencia.nota && <p className="text-[12px] text-muted-foreground mt-1 italic">{companero.licencia.nota}</p>}
+              </div>
+              {(isSuperAdmin || isAdmin) && (
+                <button disabled={savingLicencia}
+                  onClick={() => { if (confirm("¿Terminar la licencia? La persona volverá a aparecer en los pendientes de bitácora.")) handleSaveLicencia(null) }}
+                  className="text-[12px] font-medium px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50">
+                  Terminar licencia
+                </button>
+              )}
+            </div>
+          )}
+
+          {isOwnProfile && !isEnLicencia(companero) && (
             <div className="bg-card border border-border rounded-2xl overflow-hidden mb-3"
               style={{ borderTopColor: "oklch(0.52 0.13 165)", borderTopWidth: "3px" }}>
               <form onSubmit={handleAddLog} className="p-5">

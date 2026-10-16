@@ -38,6 +38,10 @@ service cloud.firestore {
           request.auth.uid == resource.data.get("uid", "") ||
           request.auth.token.email == resource.data.get("email", "")
         )
+      ) || (
+        // Coordinadores pueden marcar/quitar licencias (solo ese campo)
+        isRoleAdmin() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["licencia"])
       );
 
       // Retroalimentación: coordinadores y superadmins escriben; dueño y coordinadores leen

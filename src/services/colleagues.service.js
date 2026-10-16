@@ -1,5 +1,6 @@
 import { collection, getDocs, getDoc, addDoc, updateDoc, deleteDoc, doc, arrayRemove, arrayUnion, query, where, serverTimestamp } from "firebase/firestore"
 import { db } from "@/services/firebase"
+import { format } from "date-fns"
 
 export const getColleagues = async () => {
   const snapshot = await getDocs(collection(db, "companeros"))
@@ -89,7 +90,21 @@ export const updateProject = async (colleagueId, oldProject, newProject) => {
   return await updateDoc(docRef, { proyectos: updated })
 }
 
-export const updatePerfilProfesional = async (colleagueId, key, data) => {
+// ── Licencia (maternidad, incapacidad, etc.) ────────────────────────────────
+// licencia: { tipo, desde: "yyyy-MM-dd", hasta: "yyyy-MM-dd" | "", nota } — null para quitarla
+export const setLicencia = async (colleagueId, licencia) => {
+  return await updateDoc(doc(db, "companeros", colleagueId), { licencia: licencia || null })
+}
+
+// true si la persona está en licencia en la fecha dada (hasta vacío = indefinida)
+export const isEnLicencia = (companero, fecha = new Date()) => {
+  const l = companero?.licencia
+  if (!l?.desde) return false
+  const hoy = format(fecha, "yyyy-MM-dd")
+  return l.desde <= hoy && (!l.hasta || l.hasta >= hoy)
+}
+
+export const updatePerfilProfesional =async (colleagueId, key, data) => {
   return await updateDoc(doc(db, "companeros", colleagueId), {
     [`perfilProfesional.${key}`]: data,
   })

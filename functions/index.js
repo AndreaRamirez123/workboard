@@ -1,6 +1,6 @@
 const functions = require("firebase-functions")
 const { initializeApp } = require("firebase-admin/app")
-const { getFirestore, FieldValue } = require("firebase-admin/firestore")
+const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore")
 
 const app = initializeApp()
 // El proyecto usa la base de datos nombrada "default" (sin paréntesis),
@@ -138,20 +138,26 @@ exports.pendingLogs = functions.https.onRequest(async (req, res) => {
   const mondayUTC = new Date(monday.getTime() - utcOffset * 60000)
 
   const logsSnap = await db.collection("logs")
-    .where("createdAt", ">=", admin.firestore.Timestamp.fromDate(mondayUTC))
+    .where("createdAt", ">=", Timestamp.fromDate(mondayUTC))
     .get()
 
   const logged = new Set(logsSnap.docs.map(d => d.data().colleagueId))
 
+  // Quienes están en licencia hoy (maternidad, incapacidad…) no deben bitácora
+  const hoy = local.toISOString().slice(0, 10)
+  const enLicencia = (c) => !!c.licencia?.desde && c.licencia.desde <= hoy && (!c.licencia.hasta || c.licencia.hasta >= hoy)
+
   const companSnap = await db.collection("companeros").get()
+  const licencias = companSnap.docs.filter(d => enLicencia(d.data()))
   const pending = companSnap.docs
-    .filter(d => !logged.has(d.id))
+    .filter(d => !logged.has(d.id) && !enLicencia(d.data()))
     .map(d => ({ nombre: d.data().nombre, email: d.data().email || null }))
 
   return res.json({
     pending,
     total: companSnap.size,
     pendingCount: pending.length,
+    enLicencia: licencias.map(d => ({ nombre: d.data().nombre, tipo: d.data().licencia.tipo || null })),
     weekStart: monday.toISOString().slice(0, 10),
   })
 })
