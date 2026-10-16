@@ -19,6 +19,7 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import EmojiPicker from "emoji-picker-react"
 import { Footer } from "@/components/ui/Footer"
+import { ArchivosPanel } from "@/components/ui/ArchivosPanel"
 
 
 
@@ -192,6 +193,7 @@ export default function ColleagueDetail() {
       observaciones: proyecto.observaciones || "",
       fechaInicio: proyecto.fechaInicio || "",
       fechaEntrega: proyecto.fechaEntrega || "",
+      archivos: proyecto.archivos || [],
     })
     setShowProjectForm(true)
     setPdfImported(false)
@@ -953,6 +955,13 @@ export default function ColleagueDetail() {
             )}
           </div>
 
+          {(isAdmin || isOwnProfile) && (
+            <div className="mb-3">
+              <ArchivosPanel colleagueId={id} carpetas={["proyectos", "documentos"]}
+                titulo="Todos los archivos de actividades" />
+            </div>
+          )}
+
           {/* ── Inline project form ─────────────────────────────────────── */}
           {showProjectForm && canEdit && (
             <div className="rounded-xl border border-border p-4 space-y-3 mb-3" style={{ background: "var(--muted)" }}>
@@ -1414,6 +1423,12 @@ export default function ColleagueDetail() {
               </div>
             )}
           </div>
+
+          {(isAdmin || isOwnProfile) && (
+            <div className="mb-3">
+              <ArchivosPanel colleagueId={id} carpetas={["logs"]} titulo="Todos los archivos de la bitácora" />
+            </div>
+          )}
 
           {isOwnProfile && !isEnLicencia(companero) && (
             <div className="bg-card border border-border rounded-2xl overflow-hidden mb-3"

@@ -1,4 +1,4 @@
-import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage"
+import { ref, uploadBytesResumable, getDownloadURL, deleteObject, listAll, getMetadata } from "firebase/storage"
 import { collection, addDoc, getDocs, deleteDoc, doc, serverTimestamp, query, orderBy } from "firebase/firestore"
 import { storage, db } from "@/services/firebase"
 
@@ -185,7 +185,37 @@ export const uploadAttachment = (basePath, file, { onProgress } = {}) => {
   })
 }
 
-export const uploadGrupoTaskFile = (grupoId, taskId, file, { onProgress } = {}) => {
+// ── Todos los archivos guardados de un compañero (directo de Storage) ────────
+// Incluye archivos que no quedaron vinculados a ninguna actividad o nota.
+// carpetas: subconjunto de ["proyectos", "documentos", "logs", "tareas"]
+const listRecursive = async (folderRef) => {
+  const res = await listAll(folderRef)
+  const nested = await Promise.all(res.prefixes.map(listRecursive))
+  return [...res.items, ...nested.flat()]
+}
+
+export const listColleagueFiles = async (colleagueId, carpetas) => {
+  const items = (await Promise.all(
+    carpetas.map(c => listRecursive(ref(storage, `${c}/${colleagueId}`)).catch(() => []))
+  )).flat()
+  const files = await Promise.all(items.map(async (item) => {
+    const [url, meta] = await Promise.all([getDownloadURL(item), getMetadata(item).catch(() => null)])
+    const [carpeta, , ...rest] = item.fullPath.split("/")
+    return {
+      nombre: item.name.replace(/^\d{10,}_/, ""),
+      url,
+      storagePath: item.fullPath,
+      carpeta,
+      subcarpeta: rest.length > 1 ? rest[0].replace(/_/g, " ") : null,
+      size: meta?.size || 0,
+      tipo: meta?.contentType || "",
+      fecha: meta?.timeCreated ? new Date(meta.timeCreated) : null,
+    }
+  }))
+  return files.sort((a, b) => (b.fecha || 0) - (a.fecha || 0))
+}
+
+export const uploadGrupoTaskFile =(grupoId, taskId, file, { onProgress } = {}) => {
   return new Promise((resolve, reject) => {
     const safeName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`
     const storagePath = `tareas-grupo/${grupoId}/${taskId}/${safeName}`
