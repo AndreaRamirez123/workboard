@@ -360,7 +360,6 @@ export default function GlobalDashboard() {
               </div>
             ) : tab === "resumen" ? (
               <>
-                <LicenciasBanner colleagues={colleagues} semilleros={semilleros} />
                 {/* Stat cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <StatCard label="Equipos activos" value={semilleros.length} hue="165" />
@@ -438,6 +437,7 @@ export default function GlobalDashboard() {
 
                 {/* Actividad semanal */}
                 <section>
+                  <div className="mb-3 empty:hidden"><LicenciasBanner colleagues={colleagues} semilleros={semilleros} /></div>
                   {/* Fila 1: título + contador + selector de fechas */}
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
